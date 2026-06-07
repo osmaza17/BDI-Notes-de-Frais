@@ -43,16 +43,43 @@ const I18N = {
     'person.needName': 'Indique au moins le titulaire.',
     'person.edit': 'Modifier',
     'person.del': 'Supprimer',
+    'person.role': 'Rôle dans son club',
+    'role.prez': 'Président',
+    'role.trez': 'Trésorier',
+    'role.vice_trez': 'Vice-trésorier',
+    'role.membre': 'Membre',
+    'role.externe': 'Externe',
+    'role.autre': 'Autre',
     'ndf.legendTitle': "Code couleur des lignes (fiabilité de l'IA)",
     'ndf.confHaute': 'Confiance élevée',
     'ndf.confMoyenne': 'Confiance moyenne — à vérifier',
     'ndf.confBasse': 'Confiance faible — à vérifier absolument',
-    'tabs.back': '← Événements',
+    'tabs.events': 'Événements',
     'tabs.documents': 'Documents',
     'tabs.analyse': 'Analyse',
     'tabs.ndf': 'Note de Frais',
+    'tabs.signee': 'Signée',
+    'signee.title': 'Note de Frais signée',
+    'signee.sub': "Joins la Note de Frais signée par le membre. Elle est enregistrée dans le dossier de l'événement avec le suffixe « _signee ».",
+    'signee.add': '+ Joindre la NDF signée',
+    'signee.none': 'Aucune NDF signée jointe. Glisse un PDF ou une image ici.',
+    'signee.download': '⬇ Télécharger',
+    'signee.replace': '↻ Remplacer',
+    'signee.delete': 'Supprimer',
+    'signee.confirmDel': 'Supprimer la NDF signée ?',
+    'signee.deleted': 'NDF signée supprimée',
+    'signee.saved': 'NDF signée enregistrée ✔',
+    'signee.badType': 'Format non accepté (PDF, JPG ou PNG).',
     'howto.btn': '❔ How to use',
     'howto.prefix': 'Comment ça marche — ',
+    'howto.allTitle': "Comment ça marche — guide de l'application",
+    'docs.eventInfo': "Informations de l'événement",
+    'docs.eventInfoSub': 'Modifie ces champs : tout est enregistré et reporté automatiquement.',
+    'form.docs': 'Documents (factures, tickets, attestations)',
+    'form.docsHint': "Optionnel : joins-les ici, l'analyse se lancera automatiquement après la création.",
+    'sign.del': 'Supprimer cette signature',
+    'sign.confirmDel': 'Supprimer la signature « {x} » ?',
+    'sign.deleted': 'Signature supprimée',
 
     'home.title': 'Événements',
     'home.newEvent': 'Nouvel événement',
@@ -61,7 +88,6 @@ const I18N = {
     'home.noMatch': 'Aucun événement ne correspond à la recherche.',
     'home.docs': 'doc(s)',
     'home.search': '🔎 Rechercher (nom, pôle, membre, année)…',
-    'home.allStates': 'Tous les états',
 
     'form.name': "Nom de l'événement",
     'form.namePh': 'ex : World Week 2026',
@@ -85,11 +111,10 @@ const I18N = {
     'estado.valide': 'Validé',
     'estado.envoye': 'Envoyé',
     'estado.rembourse': 'Remboursé',
-    'paye.yes': '✓ Payé',
-    'paye.no': 'Non payé',
     'budget.left': 'Budget restant',
     'budget.over': 'Dépassement',
     'budget.none': 'Sans budget',
+    'budget.spent': 'Dépensé',
 
     'docs.title': 'Documents',
     'docs.sub': "Glisse tes pièces : l'analyse se lance automatiquement.",
@@ -97,7 +122,7 @@ const I18N = {
     'docs.add': '+ Ajouter des documents',
     'docs.none': 'Aucun document. Glisse des fichiers ici.',
     'docs.view': 'Voir',
-    'docs.openTab': 'Ouvrir',
+    'docs.openFolder': 'Ouvrir le dossier',
     'docs.confirmDel': 'Supprimer « {x} » ?',
     'docs.deleted': 'Document supprimé',
     'docs.added': 'Documents ajoutés — analyse…',
@@ -113,6 +138,9 @@ const I18N = {
     'analyse.regen': '↻ Régénérer la note',
     'analyse.regening': '↻ Régénération…',
     'analyse.regenOk': 'Note régénérée ✔',
+    'analyse.retry': '↻ Relire ce document',
+    'analyse.retrying': 'Relecture…',
+    'analyse.retried': 'Document relu ✔',
     'analyse.none': 'Aucun document à analyser.',
     'analyse.loadingDoc': "Lecture du document par l'IA…",
     'analyse.notYet': 'Pas encore analysé.',
@@ -122,19 +150,22 @@ const I18N = {
     'ndf.title': 'Vérification & édition',
     'ndf.pdf': '📄 Générer le PDF',
     'ndf.pdfGen': '📄 Génération…',
+    'ndf.pdfOk': 'PDF téléchargé ✔',
+    'ndf.pdfNoPages': 'Impossible de rendre la note (aucune page). Recharge la page (Ctrl+F5) et réessaie.',
+    'ndf.pdfBlank': 'Le rendu de la note a échoué. Recharge la page (Ctrl+F5) et réessaie.',
     'ndf.excel': '⬇ Excel',
     'ndf.obsTitle': "Observations de l'IA",
     'ndf.obsSub': "Remarques de l'analyse (non imprimées sur la NDF).",
     'ndf.addObs': '+ Ajouter une remarque',
     'ndf.noObs': 'Aucune observation.',
-    'ndf.addLine': '+ Add new line',
+    'ndf.addLine': '+ Ajouter une ligne',
     'ndf.warnName': '⚠ Le nom de famille doit être écrit en MAJUSCULES (ex : Óscar MARTÍNEZ ZAMORA).',
     'ndf.ibanMissing': '⚠ IBAN requis pour générer le PDF. Renseigne l’IBAN de l’abonné ci-dessus.',
     'docs.orphanTitle': '⚠ Documents non utilisés dans la note :',
     'docs.orphanBadge': 'non utilisé',
     'docs.duplicate': 'Doublon ignoré : identique à « {x} ».',
     'ndf.signTrez': '✎ Signature trésorier',
-    'ndf.signMembre': '✎ Signature membre',
+    'ndf.removeSign': 'Retirer la signature',
     'ndf.saving': 'Enregistrement…',
     'ndf.saved': 'Enregistré ✔',
     'ndf.ordreTitle': 'Ordre des pièces jointes',
@@ -143,11 +174,12 @@ const I18N = {
     'ndf.budgetMax': 'Budget max',
 
     'sign.titleTrez': 'Signature du trésorier',
-    'sign.titleMembre': 'Signature du membre',
     'sign.sub': 'Choisis une signature enregistrée :',
     'sign.import': '+ Importer une autre image',
     'sign.none': 'Aucune signature enregistrée.',
     'sign.set': 'Signature ajoutée ✔',
+    'sign.removed': 'Signature retirée',
+    'sign.askTrezName': 'Nom du trésorier BDI (pour nommer la signature) :',
   },
 
   es: {
@@ -188,16 +220,43 @@ const I18N = {
     'person.needName': 'Indica al menos el titular.',
     'person.edit': 'Editar',
     'person.del': 'Eliminar',
+    'person.role': 'Rol en su club',
+    'role.prez': 'Presidente',
+    'role.trez': 'Tesorero',
+    'role.vice_trez': 'Vice-tesorero',
+    'role.membre': 'Miembro',
+    'role.externe': 'Externo',
+    'role.autre': 'Otro',
     'ndf.legendTitle': 'Código de color de las líneas (fiabilidad de la IA)',
     'ndf.confHaute': 'Confianza alta',
     'ndf.confMoyenne': 'Confianza media — revisar',
     'ndf.confBasse': 'Confianza baja — revisar sin falta',
-    'tabs.back': '← Eventos',
+    'tabs.events': 'Eventos',
     'tabs.documents': 'Documentos',
     'tabs.analyse': 'Análisis',
     'tabs.ndf': 'Nota de Gastos',
+    'tabs.signee': 'Firmada',
+    'signee.title': 'Nota de Gastos firmada',
+    'signee.sub': 'Adjunta la Nota de Gastos firmada por el miembro. Se guarda en la carpeta del evento con el sufijo « _signee ».',
+    'signee.add': '+ Adjuntar la NDF firmada',
+    'signee.none': 'No hay NDF firmada adjunta. Arrastra un PDF o imagen aquí.',
+    'signee.download': '⬇ Descargar',
+    'signee.replace': '↻ Reemplazar',
+    'signee.delete': 'Eliminar',
+    'signee.confirmDel': '¿Eliminar la NDF firmada?',
+    'signee.deleted': 'NDF firmada eliminada',
+    'signee.saved': 'NDF firmada guardada ✔',
+    'signee.badType': 'Formato no admitido (PDF, JPG o PNG).',
     'howto.btn': '❔ Cómo se usa',
     'howto.prefix': 'Cómo funciona — ',
+    'howto.allTitle': 'Cómo funciona — guía de la aplicación',
+    'docs.eventInfo': 'Información del evento',
+    'docs.eventInfoSub': 'Edita estos campos: todo se guarda y se refleja automáticamente.',
+    'form.docs': 'Documentos (facturas, tickets, attestations)',
+    'form.docsHint': 'Opcional: adjúntalos aquí; el análisis se lanzará automáticamente tras crear el evento.',
+    'sign.del': 'Eliminar esta firma',
+    'sign.confirmDel': '¿Eliminar la firma « {x} »?',
+    'sign.deleted': 'Firma eliminada',
 
     'home.title': 'Eventos',
     'home.newEvent': 'Nuevo evento',
@@ -206,7 +265,6 @@ const I18N = {
     'home.noMatch': 'Ningún evento coincide con la búsqueda.',
     'home.docs': 'doc(s)',
     'home.search': '🔎 Buscar (nombre, pôle, miembro, año)…',
-    'home.allStates': 'Todos los estados',
 
     'form.name': 'Nombre del evento',
     'form.namePh': 'ej : World Week 2026',
@@ -230,11 +288,10 @@ const I18N = {
     'estado.valide': 'Validado',
     'estado.envoye': 'Enviado',
     'estado.rembourse': 'Reembolsado',
-    'paye.yes': '✓ Pagado',
-    'paye.no': 'No pagado',
     'budget.left': 'Presupuesto restante',
     'budget.over': 'Excedido',
     'budget.none': 'Sin presupuesto',
+    'budget.spent': 'Gastado',
 
     'docs.title': 'Documentos',
     'docs.sub': 'Arrastra tus documentos: el análisis se lanza automáticamente.',
@@ -242,7 +299,7 @@ const I18N = {
     'docs.add': '+ Añadir documentos',
     'docs.none': 'Ningún documento. Arrastra archivos aquí.',
     'docs.view': 'Ver',
-    'docs.openTab': 'Abrir',
+    'docs.openFolder': 'Abrir carpeta',
     'docs.confirmDel': '¿Eliminar « {x} »?',
     'docs.deleted': 'Documento eliminado',
     'docs.added': 'Documentos añadidos — analizando…',
@@ -258,6 +315,9 @@ const I18N = {
     'analyse.regen': '↻ Regenerar la nota',
     'analyse.regening': '↻ Regenerando…',
     'analyse.regenOk': 'Nota regenerada ✔',
+    'analyse.retry': '↻ Releer este documento',
+    'analyse.retrying': 'Releyendo…',
+    'analyse.retried': 'Documento releído ✔',
     'analyse.none': 'Ningún documento que analizar.',
     'analyse.loadingDoc': 'Leyendo el documento con la IA…',
     'analyse.notYet': 'Aún no analizado.',
@@ -267,6 +327,9 @@ const I18N = {
     'ndf.title': 'Verificación y edición',
     'ndf.pdf': '📄 Generar el PDF',
     'ndf.pdfGen': '📄 Generando…',
+    'ndf.pdfOk': 'PDF descargado ✔',
+    'ndf.pdfNoPages': 'No se pudo renderizar la nota (sin páginas). Recarga (Ctrl+F5) y reinténtalo.',
+    'ndf.pdfBlank': 'Falló el render de la nota. Recarga (Ctrl+F5) y reinténtalo.',
     'ndf.excel': '⬇ Excel',
     'ndf.obsTitle': 'Observaciones de la IA',
     'ndf.obsSub': 'Observaciones del análisis (no se imprimen en la NDF).',
@@ -279,7 +342,7 @@ const I18N = {
     'docs.orphanBadge': 'sin usar',
     'docs.duplicate': 'Duplicado ignorado: idéntico a « {x} ».',
     'ndf.signTrez': '✎ Firma tesorero',
-    'ndf.signMembre': '✎ Firma miembro',
+    'ndf.removeSign': 'Quitar la firma',
     'ndf.saving': 'Guardando…',
     'ndf.saved': 'Guardado ✔',
     'ndf.ordreTitle': 'Orden de los documentos adjuntos',
@@ -288,11 +351,12 @@ const I18N = {
     'ndf.budgetMax': 'Presupuesto máx.',
 
     'sign.titleTrez': 'Firma del tesorero',
-    'sign.titleMembre': 'Firma del miembro',
     'sign.sub': 'Elige una firma guardada:',
     'sign.import': '+ Importar otra imagen',
     'sign.none': 'No hay firmas guardadas.',
     'sign.set': 'Firma añadida ✔',
+    'sign.removed': 'Firma quitada',
+    'sign.askTrezName': 'Nombre del tesorero BDI (para nombrar la firma):',
   },
 
   en: {
@@ -333,16 +397,43 @@ const I18N = {
     'person.needName': 'Enter at least the account holder.',
     'person.edit': 'Edit',
     'person.del': 'Delete',
+    'person.role': 'Role in their club',
+    'role.prez': 'President',
+    'role.trez': 'Treasurer',
+    'role.vice_trez': 'Vice-treasurer',
+    'role.membre': 'Member',
+    'role.externe': 'External',
+    'role.autre': 'Other',
     'ndf.legendTitle': 'Row colour code (AI confidence)',
     'ndf.confHaute': 'High confidence',
     'ndf.confMoyenne': 'Medium confidence — check',
     'ndf.confBasse': 'Low confidence — must check',
-    'tabs.back': '← Events',
+    'tabs.events': 'Events',
     'tabs.documents': 'Documents',
     'tabs.analyse': 'Analysis',
     'tabs.ndf': 'Expense Report',
+    'tabs.signee': 'Signed',
+    'signee.title': 'Signed Expense Report',
+    'signee.sub': 'Attach the Expense Report signed by the member. It is saved in the event folder with the « _signee » suffix.',
+    'signee.add': '+ Attach the signed report',
+    'signee.none': 'No signed report attached. Drop a PDF or image here.',
+    'signee.download': '⬇ Download',
+    'signee.replace': '↻ Replace',
+    'signee.delete': 'Delete',
+    'signee.confirmDel': 'Delete the signed report?',
+    'signee.deleted': 'Signed report deleted',
+    'signee.saved': 'Signed report saved ✔',
+    'signee.badType': 'Unsupported format (PDF, JPG or PNG).',
     'howto.btn': '❔ How to use',
     'howto.prefix': 'How it works — ',
+    'howto.allTitle': 'How it works — app guide',
+    'docs.eventInfo': 'Event information',
+    'docs.eventInfoSub': 'Edit these fields: everything is saved and reflected automatically.',
+    'form.docs': 'Documents (invoices, receipts, attestations)',
+    'form.docsHint': 'Optional: attach them here; analysis starts automatically after creation.',
+    'sign.del': 'Delete this signature',
+    'sign.confirmDel': 'Delete the signature “{x}”?',
+    'sign.deleted': 'Signature deleted',
 
     'home.title': 'Events',
     'home.newEvent': 'New event',
@@ -351,7 +442,6 @@ const I18N = {
     'home.noMatch': 'No event matches your search.',
     'home.docs': 'doc(s)',
     'home.search': '🔎 Search (name, pôle, member, year)…',
-    'home.allStates': 'All states',
 
     'form.name': 'Event name',
     'form.namePh': 'e.g. World Week 2026',
@@ -375,11 +465,10 @@ const I18N = {
     'estado.valide': 'Validated',
     'estado.envoye': 'Sent',
     'estado.rembourse': 'Reimbursed',
-    'paye.yes': '✓ Paid',
-    'paye.no': 'Unpaid',
     'budget.left': 'Budget left',
     'budget.over': 'Over budget',
     'budget.none': 'No budget',
+    'budget.spent': 'Spent',
 
     'docs.title': 'Documents',
     'docs.sub': 'Drop your files: analysis starts automatically.',
@@ -387,7 +476,7 @@ const I18N = {
     'docs.add': '+ Add documents',
     'docs.none': 'No documents. Drop files here.',
     'docs.view': 'View',
-    'docs.openTab': 'Open',
+    'docs.openFolder': 'Open folder',
     'docs.confirmDel': 'Delete “{x}”?',
     'docs.deleted': 'Document deleted',
     'docs.added': 'Documents added — analysing…',
@@ -403,6 +492,9 @@ const I18N = {
     'analyse.regen': '↻ Regenerate the report',
     'analyse.regening': '↻ Regenerating…',
     'analyse.regenOk': 'Report regenerated ✔',
+    'analyse.retry': '↻ Re-read this document',
+    'analyse.retrying': 'Re-reading…',
+    'analyse.retried': 'Document re-read ✔',
     'analyse.none': 'No document to analyse.',
     'analyse.loadingDoc': 'Reading the document with AI…',
     'analyse.notYet': 'Not analysed yet.',
@@ -412,6 +504,9 @@ const I18N = {
     'ndf.title': 'Review & edit',
     'ndf.pdf': '📄 Generate PDF',
     'ndf.pdfGen': '📄 Generating…',
+    'ndf.pdfOk': 'PDF downloaded ✔',
+    'ndf.pdfNoPages': 'Could not render the note (no pages). Reload (Ctrl+F5) and try again.',
+    'ndf.pdfBlank': 'Rendering the note failed. Reload (Ctrl+F5) and try again.',
     'ndf.excel': '⬇ Excel',
     'ndf.obsTitle': 'AI observations',
     'ndf.obsSub': 'Notes from the analysis (not printed on the report).',
@@ -424,7 +519,7 @@ const I18N = {
     'docs.orphanBadge': 'unused',
     'docs.duplicate': 'Duplicate ignored: identical to “{x}”.',
     'ndf.signTrez': '✎ Treasurer signature',
-    'ndf.signMembre': '✎ Member signature',
+    'ndf.removeSign': 'Remove signature',
     'ndf.saving': 'Saving…',
     'ndf.saved': 'Saved ✔',
     'ndf.ordreTitle': 'Order of the attached documents',
@@ -433,11 +528,12 @@ const I18N = {
     'ndf.budgetMax': 'Max budget',
 
     'sign.titleTrez': 'Treasurer signature',
-    'sign.titleMembre': 'Member signature',
     'sign.sub': 'Choose a saved signature:',
     'sign.import': '+ Import another image',
     'sign.none': 'No saved signatures.',
     'sign.set': 'Signature added ✔',
+    'sign.removed': 'Signature removed',
+    'sign.askTrezName': 'BDI treasurer name (to name the signature):',
   },
 };
 
@@ -451,21 +547,25 @@ const AYUDA = {
     eventos: { titulo: 'Événements', cuerpo: `
       <p>Page d'accueil. Chaque <b>événement</b> correspond à une <b>Note de Frais</b>.</p>
       <h4>Créer</h4>
-      <p>Clique sur <b>« + »</b> (en bas à droite). Renseigne le nom, la <b>section (pôle)</b>, la date, le <b>membre</b> (nom de famille en MAJUSCULES) et le <b>budget max alloué par le BDI</b>.</p>
+      <p>Clique sur <b>« + »</b> (en bas à droite). Renseigne le nom, la <b>section (pôle)</b>, la date, le <b>membre</b> (nom de famille en MAJUSCULES) et le <b>budget max alloué par le BDI</b>. Tu peux aussi y <b>joindre les documents</b> : l'analyse démarrera automatiquement après la création.</p>
       <h4>Repérer</h4>
-      <p>Les événements sont regroupés par année. La <b>couleur</b> de la carte indique l'état (brouillon, à vérifier, validé, envoyé, remboursé) et un badge montre s'il est <b>payé</b>. Utilise la <b>barre de recherche</b> et le filtre d'état pour t'y retrouver.</p>` },
+      <p>Les événements sont regroupés par année. La <b>couleur</b> de la carte indique l'état (brouillon, à vérifier, validé, envoyé, remboursé). Utilise la <b>barre de recherche</b> et les puces d'état pour t'y retrouver.</p>` },
     documents: { titulo: 'Documents', cuerpo: `
+      <p>En haut, la carte <b>Informations de l'événement</b> (nom, section, date, budget, membre) est <b>modifiable</b> : tout est enregistré et reporté automatiquement sur la note.</p>
       <p>Glisse-dépose tes factures, tickets et attestations sur la zone des cartes (ou « + Ajouter des documents »).</p>
       <p><b>L'analyse est automatique</b> : Claude lit, transcrit et prépare la Note de Frais. Supprimer un document relance l'analyse sans lui.</p>
-      <p>Sur chaque carte : <b>Voir</b> (fenêtre), <b>Ouvrir</b> (onglet), clic sur le nom pour renommer, clic sur la carte pour voir le texte (Analyse).</p>` },
+      <p>Sur chaque carte : <b>Voir</b> (fenêtre), <b>Ouvrir le dossier</b> (Explorateur Windows à l'emplacement du fichier), clic sur le nom pour renommer, clic sur la carte pour voir le texte (Analyse).</p>` },
     analyse: { titulo: 'Analyse', cuerpo: `
       <p>Vérifie ce que Claude a lu : original à gauche, transcription (éditable) à droite. Les flèches ← → naviguent entre documents.</p>
-      <p>Corrige puis <b>« Régénérer la note »</b>. <b>« Ouvrir »</b> ouvre le document dans un onglet.</p>` },
+      <p>Corrige puis <b>« Régénérer la note »</b>. <b>« Ouvrir le dossier »</b> ouvre l'Explorateur Windows à l'emplacement du fichier. Si la lecture d'un document a échoué ou est incomplète, <b>« Relire ce document »</b> redemande sa transcription à l'IA.</p>` },
     ndf: { titulo: 'Note de Frais', cuerpo: `
       <p>Aperçu fidèle, <b>tout est modifiable et enregistré automatiquement</b> (Ctrl+S force la sauvegarde).</p>
       <p><b>Add new line</b> ajoute une ligne ; la ✕ en supprime une. Le <b>fond coloré</b> d'une ligne indique la confiance de l'IA (vert/ambre/rouge). Si la table est longue, l'aperçu passe en plusieurs pages A4.</p>
-      <p>Boutons <b>Signature trésorier</b> / <b>Signature membre</b> pour insérer les signatures. Choisis l'<b>ordre des pièces jointes</b> avec les cartes. <b>Générer le PDF</b> (Ctrl+P) crée un PDF unique : note + toutes les pièces. <b>Excel</b> exporte les lignes.</p>
-      <p>En haut : l'<b>état</b> de l'événement, le bouton <b>payé / non payé</b> et le <b>budget restant</b>.</p>` },
+      <p>Le bouton <b>Signature trésorier</b> insère la signature du trésorier de l'asso mère (depuis la fenêtre tu peux aussi <b>supprimer</b> une signature enregistrée). Le membre signe ensuite <b>physiquement</b> la NDF ; tu pourras joindre la version signée dans l'onglet <b>Signée</b>. Choisis l'<b>ordre des pièces jointes</b> avec les cartes. <b>Générer le PDF</b> (Ctrl+P) crée un PDF unique : note + toutes les pièces. <b>Excel</b> exporte les lignes.</p>
+      <p>En haut à gauche : l'<b>état</b> de l'événement et le <b>budget restant</b>. L'état <b>Remboursé</b> indique que la NDF a été payée.</p>` },
+    signee: { titulo: 'Signée', cuerpo: `
+      <p>Une fois la NDF signée par le membre, joins-la ici (PDF ou image, glisser-déposer ou « + Joindre la NDF signée »).</p>
+      <p>Elle est enregistrée dans le dossier de l'événement avec le suffixe <b>_signee</b>. Tu peux la <b>télécharger</b>, <b>ouvrir le dossier</b>, la <b>remplacer</b> ou la <b>supprimer</b>.</p>` },
   },
   es: {
     personnes: { titulo: 'Personas', cuerpo: `
@@ -475,21 +575,25 @@ const AYUDA = {
     eventos: { titulo: 'Eventos', cuerpo: `
       <p>Página inicial. Cada <b>evento</b> es una <b>Nota de Gastos</b>.</p>
       <h4>Crear</h4>
-      <p>Pulsa <b>« + »</b> (abajo a la derecha). Indica nombre, <b>sección (pôle)</b>, fecha, <b>miembro</b> (apellido en MAYÚSCULAS) y el <b>presupuesto máx. asignado por el BDI</b>.</p>
+      <p>Pulsa <b>« + »</b> (abajo a la derecha). Indica nombre, <b>sección (pôle)</b>, fecha, <b>miembro</b> (apellido en MAYÚSCULAS) y el <b>presupuesto máx. asignado por el BDI</b>. También puedes <b>adjuntar los documentos</b> ahí: el análisis se lanzará automáticamente tras crear el evento.</p>
       <h4>Identificar</h4>
-      <p>Los eventos se agrupan por año. El <b>color</b> de la tarjeta indica el estado (borrador, por verificar, validado, enviado, reembolsado) y un distintivo muestra si está <b>pagado</b>. Usa el <b>buscador</b> y el filtro de estado.</p>` },
+      <p>Los eventos se agrupan por año. El <b>color</b> de la tarjeta indica el estado (borrador, por verificar, validado, enviado, reembolsado). Usa el <b>buscador</b> y las chips de estado.</p>` },
     documents: { titulo: 'Documentos', cuerpo: `
+      <p>Arriba, la tarjeta <b>Información del evento</b> (nombre, sección, fecha, presupuesto, miembro) es <b>editable</b>: todo se guarda y se refleja automáticamente en la nota.</p>
       <p>Arrastra facturas, tickets y attestations sobre la zona de tarjetas (o « + Añadir documentos »).</p>
       <p><b>El análisis es automático</b>: Claude lee, transcribe y prepara la nota. Borrar un documento relanza el análisis sin él.</p>
-      <p>En cada tarjeta: <b>Ver</b> (ventana), <b>Abrir</b> (pestaña), clic en el nombre para renombrar, clic en la tarjeta para ver el texto (Análisis).</p>` },
+      <p>En cada tarjeta: <b>Ver</b> (ventana), <b>Abrir carpeta</b> (Explorador de Windows en la ubicación del archivo), clic en el nombre para renombrar, clic en la tarjeta para ver el texto (Análisis).</p>` },
     analyse: { titulo: 'Análisis', cuerpo: `
       <p>Revisa lo que Claude ha leído: original a la izquierda, transcripción (editable) a la derecha. Las flechas ← → navegan entre documentos.</p>
-      <p>Corrige y pulsa <b>« Regenerar la nota »</b>. <b>« Abrir »</b> abre el documento en una pestaña.</p>` },
+      <p>Corrige y pulsa <b>« Regenerar la nota »</b>. <b>« Abrir carpeta »</b> abre el Explorador de Windows en la ubicación del archivo. Si la lectura de un documento falló o quedó incompleta, <b>« Releer este documento »</b> vuelve a pedir su transcripción a la IA.</p>` },
     ndf: { titulo: 'Nota de Gastos', cuerpo: `
       <p>Previsualización fiel, <b>todo es editable y se guarda solo</b> (Ctrl+S fuerza el guardado).</p>
       <p><b>Añadir línea</b> agrega una fila; la ✕ elimina una. El <b>fondo de color</b> de una fila indica la confianza de la IA (verde/ámbar/rojo). Si la tabla es larga, pasa a varias páginas A4.</p>
-      <p>Botones <b>Firma tesorero</b> / <b>Firma miembro</b> para insertar las firmas. Elige el <b>orden de los adjuntos</b> con las tarjetas. <b>Generar el PDF</b> (Ctrl+P) crea un PDF único: nota + todos los documentos. <b>Excel</b> exporta las líneas.</p>
-      <p>Arriba: el <b>estado</b> del evento, el botón <b>pagado / no pagado</b> y el <b>presupuesto restante</b>.</p>` },
+      <p>El botón <b>Firma tesorero</b> inserta la firma del tesorero de la asso madre (desde la ventana también puedes <b>eliminar</b> una firma guardada). El miembro firma luego <b>físicamente</b> la NDF; podrás adjuntar la versión firmada en la pestaña <b>Firmada</b>. Elige el <b>orden de los adjuntos</b> con las tarjetas. <b>Generar el PDF</b> (Ctrl+P) crea un PDF único: nota + todos los documentos. <b>Excel</b> exporta las líneas.</p>
+      <p>Arriba a la izquierda: el <b>estado</b> del evento y el <b>presupuesto restante</b>. El estado <b>Reembolsado</b> indica que la NDF está pagada.</p>` },
+    signee: { titulo: 'Firmada', cuerpo: `
+      <p>Cuando el miembro haya firmado la NDF, adjúntala aquí (PDF o imagen, arrastrando o « + Adjuntar la NDF firmada »).</p>
+      <p>Se guarda en la carpeta del evento con el sufijo <b>_signee</b>. Puedes <b>descargarla</b>, <b>abrir la carpeta</b>, <b>reemplazarla</b> o <b>eliminarla</b>.</p>` },
   },
   en: {
     personnes: { titulo: 'People', cuerpo: `
@@ -499,21 +603,25 @@ const AYUDA = {
     eventos: { titulo: 'Events', cuerpo: `
       <p>Home page. Each <b>event</b> is one <b>Expense Report</b>.</p>
       <h4>Create</h4>
-      <p>Click <b>“+”</b> (bottom right). Fill in name, <b>section (pôle)</b>, date, <b>member</b> (surname in UPPERCASE) and the <b>max budget allocated by the BDI</b>.</p>
+      <p>Click <b>“+”</b> (bottom right). Fill in name, <b>section (pôle)</b>, date, <b>member</b> (surname in UPPERCASE) and the <b>max budget allocated by the BDI</b>. You can also <b>attach the documents</b> there: analysis starts automatically after creation.</p>
       <h4>Spot</h4>
-      <p>Events are grouped by year. The card <b>color</b> shows its status (draft, to review, validated, sent, reimbursed) and a badge shows if it's <b>paid</b>. Use the <b>search bar</b> and status filter.</p>` },
+      <p>Events are grouped by year. The card <b>color</b> shows its status (draft, to review, validated, sent, reimbursed). Use the <b>search bar</b> and status chips.</p>` },
     documents: { titulo: 'Documents', cuerpo: `
+      <p>At the top, the <b>Event information</b> card (name, section, date, budget, member) is <b>editable</b>: everything is saved and reflected automatically on the report.</p>
       <p>Drag & drop your invoices, receipts and attestations onto the cards area (or “+ Add documents”).</p>
       <p><b>Analysis is automatic</b>: Claude reads, transcribes and prepares the report. Deleting a document restarts analysis without it.</p>
-      <p>On each card: <b>View</b> (window), <b>Open</b> (tab), click the name to rename, click the card to see the text (Analysis).</p>` },
+      <p>On each card: <b>View</b> (window), <b>Open folder</b> (Windows Explorer at the file's location), click the name to rename, click the card to see the text (Analysis).</p>` },
     analyse: { titulo: 'Analysis', cuerpo: `
       <p>Check what Claude read: original on the left, editable transcription on the right. Arrows ← → move between documents.</p>
-      <p>Fix it then click <b>“Regenerate the report”</b>. <b>“Open”</b> opens the document in a tab.</p>` },
+      <p>Fix it then click <b>“Regenerate the report”</b>. <b>“Open folder”</b> opens Windows Explorer at the file's location. If a document's reading failed or looks incomplete, <b>“Re-read this document”</b> asks the AI to transcribe it again.</p>` },
     ndf: { titulo: 'Expense Report', cuerpo: `
       <p>Faithful preview, <b>everything is editable and saved automatically</b> (Ctrl+S forces a save).</p>
       <p><b>Add new line</b> adds a row; the ✕ removes one. A row's <b>colored background</b> shows the AI confidence (green/amber/red). If the table is long, it spans several A4 pages.</p>
-      <p><b>Treasurer signature</b> / <b>Member signature</b> buttons insert the signatures. Set the <b>attachment order</b> with the cards. <b>Generate PDF</b> (Ctrl+P) creates a single PDF: report + all documents. <b>Excel</b> exports the lines.</p>
-      <p>At the top: the event <b>status</b>, the <b>paid / unpaid</b> button and the <b>remaining budget</b>.</p>` },
+      <p>The <b>Treasurer signature</b> button inserts the asso-mère treasurer's signature (from the window you can also <b>delete</b> a saved signature). The member then signs the report <b>physically</b>; you can attach the signed version in the <b>Signed</b> tab. Set the <b>attachment order</b> with the cards. <b>Generate PDF</b> (Ctrl+P) creates a single PDF: report + all documents. <b>Excel</b> exports the lines.</p>
+      <p>Top-left: the event <b>status</b> and the <b>remaining budget</b>. The <b>Reimbursed</b> status means the report has been paid.</p>` },
+    signee: { titulo: 'Signed', cuerpo: `
+      <p>Once the member has signed the report, attach it here (PDF or image, drag & drop or “+ Attach the signed report”).</p>
+      <p>It is saved in the event folder with the <b>_signee</b> suffix. You can <b>download</b> it, <b>open the folder</b>, <b>replace</b> or <b>delete</b> it.</p>` },
   },
 };
 

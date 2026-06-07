@@ -6,9 +6,9 @@
 //  transcribe cada documento y extrae las líneas de la NDF.
 //
 //  Almacenamiento por evento (carpeta en /Dossiers/<id>/):
-//   - evento.json   → ÚNICO fichero con TODA la info del evento.
+//   - event.json    → ÚNICO fichero con TODA la info del evento.
 //   - Documents/    → subcarpeta con los ficheros aportados.
-//   - _backups/     → copias de seguridad de evento.json.
+//   - _backups/     → copias de seguridad de event.json.
 //
 //  Portabilidad: todo es relativo a la carpeta del proyecto, sin
 //  rutas absolutas; basta copiar la carpeta a otro PC con Node.
@@ -23,6 +23,7 @@ import { PDFDocument } from 'pdf-lib';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import crypto from 'node:crypto';
+import { execFile } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -69,12 +70,31 @@ async function escribirJSON(ruta, obj) {
 
 const rutaEvento = (id) => path.join(DIR_DOSSIERS, id);
 const rutaDocs = (id) => path.join(rutaEvento(id), 'Documents');
-const rutaJSON = (id) => path.join(rutaEvento(id), 'evento.json');
+const rutaJSON = (id) => path.join(rutaEvento(id), 'event.json');
+const rutaJSONlegacy = (id) => path.join(rutaEvento(id), 'evento.json');
 const rutaBackups = (id) => path.join(rutaEvento(id), '_backups');
 
 function idValido(id) { return typeof id === 'string' && /^[a-zA-Z0-9_]+$/.test(id); }
 
-async function leerEvento(id) { return leerJSON(rutaJSON(id)); }
+// Lee event.json; si no existe, cae al antiguo evento.json (compat.).
+async function leerEvento(id) {
+  const ev = await leerJSON(rutaJSON(id));
+  if (ev) return ev;
+  return leerJSON(rutaJSONlegacy(id));
+}
+
+// Migración: renombra cualquier evento.json antiguo a event.json al arrancar.
+async function migrarNombresJSON() {
+  const ids = await fs.readdir(DIR_DOSSIERS).catch(() => []);
+  for (const id of ids) {
+    if (!idValido(id)) continue;
+    const viejo = rutaJSONlegacy(id), nuevo = rutaJSON(id);
+    const hayViejo = await fs.access(viejo).then(() => true, () => false);
+    const hayNuevo = await fs.access(nuevo).then(() => true, () => false);
+    if (hayViejo && !hayNuevo) await fs.rename(viejo, nuevo).catch(() => {});
+  }
+}
+await migrarNombresJSON();
 
 // Guarda el evento y deja una copia de seguridad con marca de tiempo.
 async function guardarEvento(id, ev) {
@@ -83,7 +103,7 @@ async function guardarEvento(id, ev) {
     const previo = await fs.readFile(rutaJSON(id), 'utf8');
     await fs.mkdir(rutaBackups(id), { recursive: true });
     const sello = new Date().toISOString().replace(/[:.]/g, '-');
-    await fs.writeFile(path.join(rutaBackups(id), `evento_${sello}.json`), previo, 'utf8');
+    await fs.writeFile(path.join(rutaBackups(id), `event_${sello}.json`), previo, 'utf8');
     // Conserva solo los últimos MAX_BACKUPS.
     const copias = (await fs.readdir(rutaBackups(id))).filter((n) => n.endsWith('.json')).sort();
     for (const vieja of copias.slice(0, Math.max(0, copias.length - MAX_BACKUPS))) {
@@ -107,14 +127,14 @@ const MIME_POR_EXT = {
 const ESQUEMA_LIGNE = {
   type: 'object',
   additionalProperties: false,
-  required: ['article', 'date_achat', 'prix_ht', 'taux_tva', 'montant_ttc', 'fichier_source', 'confiance'],
+  required: ['article', 'date_achat', 'prix_ht', 'taux_tva', 'montant_ttc', 'fichiers_source', 'confiance'],
   properties: {
     article: { type: 'string', description: "Désignation courte de l'achat en français." },
     date_achat: { type: 'string', description: "Date de l'achat au format JJ/MM/AAAA. Vide si inconnue." },
-    prix_ht: { type: 'number', description: "Prix hors taxes en euros. Si la TVA n'est pas détaillée, = montant TTC." },
-    taux_tva: { type: 'string', description: "Taux de TVA (ex: '20%', '5,5%', '0%'). '0%' si non détaillé." },
-    montant_ttc: { type: 'number', description: 'Montant total TTC payé, en euros.' },
-    fichier_source: { type: 'string', description: 'Nom exact du fichier dont provient cette ligne.' },
+    prix_ht: { type: 'number', description: "Prix hors taxes en euros, pour CE taux de TVA. Si la TVA n'est pas détaillée, = montant TTC." },
+    taux_tva: { type: 'number', description: "UN SEUL taux de TVA en pourcentage (ex: 20, 5.5, 0). Jamais plusieurs taux : si un achat mélange deux taux, fais deux lignes. 0 si non détaillé." },
+    montant_ttc: { type: 'number', description: 'Montant TTC pour cette ligne (prix_ht · (1 + taux_tva/100)).' },
+    fichiers_source: { type: 'array', items: { type: 'string' }, description: "Noms exacts de TOUS les fichiers dont provient cette ligne (la facture ET son attestation sur l'honneur de soutien le cas échéant)." },
     confiance: { type: 'string', enum: ['haute', 'moyenne', 'basse'], description: "Ton niveau de confiance dans l'exactitude des montants/données de cette ligne." },
   },
 };
@@ -145,6 +165,11 @@ const ESQUEMA_SOLO = {
   properties: { lignes: { type: 'array', items: ESQUEMA_LIGNE }, observations: ESQUEMA_OBS },
 };
 
+const ESQUEMA_TRANSCRIPCION = {
+  type: 'object', additionalProperties: false, required: ['transcription'],
+  properties: { transcription: { type: 'string', description: 'Texte intégral lisible sur le document.' } },
+};
+
 // Datos bancarios extraídos de un RIB.
 const ESQUEMA_RIB = {
   type: 'object', additionalProperties: false,
@@ -163,11 +188,13 @@ On te fournit les pièces justificatives (factures, tickets de caisse, attestati
 
 Règles :
 - Lis attentivement chaque document fourni (image ou PDF) et transcris fidèlement son texte.
-- Une ligne par achat. Un ticket de caisse accompagné de son attestation sur l'honneur = une seule ligne (utilise le ticket pour les montants, l'attestation pour l'objet).
-- Les attestations sur l'honneur seules (sans montant) ne génèrent PAS de ligne : sers-t'en pour préciser l'objet des autres lignes.
-- Montants en euros. Si la TVA n'est pas détaillée, mets taux_tva='0%' et prix_ht = montant_ttc.
+- Une ligne par achat ET par taux de TVA. Un ticket de caisse accompagné de son attestation sur l'honneur = une seule ligne (utilise le ticket pour les montants, l'attestation pour l'objet) ; renseigne alors les DEUX fichiers dans "fichiers_source".
+- Les attestations sur l'honneur seules (sans montant) ne génèrent PAS de ligne propre : sers-t'en pour préciser l'objet des autres lignes, et cite-les dans "fichiers_source" de la ligne qu'elles appuient.
+- "fichiers_source" doit lister TOUS les fichiers d'où sort la ligne, pour qu'aucune pièce réellement utilisée ne soit signalée comme « non utilisée ».
+- taux_tva est UN SEUL nombre (ex : 20, 5.5, 0), jamais plusieurs. Si une facture mélange plusieurs taux, crée une ligne distincte par taux (répartis le HT correspondant). Montants en euros. Si la TVA n'est pas détaillée, taux_tva = 0 et prix_ht = montant_ttc.
 - Rédige les libellés (article) en français, de façon concise.
 - Pour chaque ligne, indique ta "confiance" (haute/moyenne/basse) selon la lisibilité du document et ta certitude sur les montants.
+- Pour chaque document qui est une "attestation sur l'honneur" : vérifie si elle est SIGNÉE et entièrement REMPLIE (montant, date, nom du signataire). Si la signature manque ou si un champ est vide/incomplet, ajoute une remarque explicite dans "observations" (ex : « L'attestation "X" n'est pas signée » ou « L'attestation "X" est incomplète : il manque la date »).
 - N'invente jamais un montant : en cas de doute, mets ta meilleure estimation, confiance 'basse', et signale-le dans "observations".
 - Le trésorier vérifiera et corrigera tout avant génération : privilégie la fidélité aux documents.`;
 
@@ -202,6 +229,20 @@ async function analizarConClaude(ev, id, archivos) {
   for (const d of r.documents || []) ocr[d.fichier] = d.transcription || '';
   for (const nombre of archivos) if (!(nombre in ocr)) ocr[nombre] = '';
   return { ocr, lignes: r.lignes || [], observations: r.observations || [] };
+}
+
+// Re-transcribe un seul document (utile en cas d'échec de l'analyse automatique).
+async function transcribirDocumento(ev, id, nombre) {
+  const content = [
+    { type: 'text', text: `${ctx(ev)}\n\nLis le document ci-dessous et transcris fidèlement son texte intégral.` },
+    ...(await bloquesDeArchivos(id, [nombre])),
+  ];
+  const resp = await anthropic.messages.create({
+    model: MODELO_CLAUDE, max_tokens: 4000, system: SYSTEM_PROMPT,
+    output_config: outputConfig(ESQUEMA_TRANSCRIPCION), messages: [{ role: 'user', content }],
+  });
+  const r = JSON.parse(textoRespuesta(resp));
+  return r.transcription || '';
 }
 
 async function estructurarDesdeTextos(ev, ocr) {
@@ -292,6 +333,7 @@ function vista(ev, archivos) {
     iban: ev.iban || '',
     budget: ev.budget ?? null, estado: ev.estado || 'brouillon', paye: !!ev.paye,
     creado: ev.creado, archivos, datos: ev.datos || null, ocr: ev.ocr || {},
+    signee: ev.signee || null,
   };
 }
 
@@ -349,6 +391,10 @@ app.put('/api/eventos/:id', async (req, res) => {
   if ('budget' in b) ev.budget = (b.budget === '' || b.budget == null) ? null : Number(b.budget);
   if ('membre' in b) ev.membre = b.membre;
   if ('iban' in b) ev.iban = (b.iban || '').trim();
+  // Editables desde la tarjeta de info del evento (el id/carpeta NO cambia).
+  if ('nom' in b) ev.nom = (b.nom || '').trim();
+  if ('section' in b) ev.section = (b.section || '').trim();
+  if ('date' in b) ev.date = (b.date || '').trim();
   await guardarEvento(id, ev);
   res.json(vista(ev, await listarArchivos(id)));
 });
@@ -395,6 +441,64 @@ app.get('/api/eventos/:id/archivos/:nombre', async (req, res) => {
   res.sendFile(path.join(rutaDocs(id), path.basename(req.params.nombre)));
 });
 
+// ---------- NDF firmada (_signee) : se guarda en la carpeta del evento ----------
+// Misma carpeta que la NDF vierge (<numero_ndf>.pdf), con el sufijo _signee.
+const EXT_SIGNEE = new Set(['.pdf', '.jpg', '.jpeg', '.png']);
+app.post('/api/eventos/:id/signee', async (req, res) => {
+  const { id } = req.params;
+  if (!idValido(id)) return res.status(400).json({ error: 'ID no válido.' });
+  const ev = await leerEvento(id);
+  if (!ev) return res.status(404).json({ error: 'Evento no encontrado.' });
+  const { nombre, contenidoBase64 } = req.body || {};
+  if (!nombre || !contenidoBase64) return res.status(400).json({ error: 'Falta nombre o contenido.' });
+  const ext = path.extname(nombre).toLowerCase();
+  if (!EXT_SIGNEE.has(ext)) return res.status(400).json({ error: 'Solo se admiten PDF o imágenes (jpg/png).' });
+  // Borra la versión firmada anterior si existe.
+  if (ev.signee) await fs.rm(path.join(rutaEvento(id), path.basename(ev.signee)), { force: true });
+  const base = (ev.datos && ev.datos.numero_ndf) || 'Note_de_Frais';
+  const destino = path.basename(`${base}_signee${ext}`);
+  await fs.writeFile(path.join(rutaEvento(id), destino), Buffer.from(contenidoBase64, 'base64'));
+  ev.signee = destino;
+  await guardarEvento(id, ev);
+  res.json({ ok: true, signee: destino });
+});
+app.get('/api/eventos/:id/signee', async (req, res) => {
+  const { id } = req.params;
+  if (!idValido(id)) return res.status(400).end();
+  const ev = await leerEvento(id);
+  if (!ev || !ev.signee) return res.status(404).end();
+  res.sendFile(path.join(rutaEvento(id), path.basename(ev.signee)));
+});
+app.delete('/api/eventos/:id/signee', async (req, res) => {
+  const { id } = req.params;
+  if (!idValido(id)) return res.status(400).json({ error: 'ID no válido.' });
+  const ev = await leerEvento(id);
+  if (!ev) return res.status(404).json({ error: 'Evento no encontrado.' });
+  if (ev.signee) { await fs.rm(path.join(rutaEvento(id), path.basename(ev.signee)), { force: true }); ev.signee = null; await guardarEvento(id, ev); }
+  res.json({ ok: true });
+});
+// Abre el Explorador de Windows seleccionando la NDF signée (en la carpeta del evento).
+app.post('/api/eventos/:id/signee/abrir-carpeta', async (req, res) => {
+  const { id } = req.params;
+  if (!idValido(id)) return res.status(400).json({ error: 'ID no válido.' });
+  if (process.platform !== 'win32') return res.status(501).json({ error: 'Solo disponible en Windows.' });
+  const ev = await leerEvento(id);
+  if (!ev || !ev.signee) return res.status(404).json({ error: 'NDF signée no encontrada.' });
+  const ruta = path.join(rutaEvento(id), path.basename(ev.signee));
+  if (!await fs.access(ruta).then(() => true, () => false)) return res.status(404).json({ error: 'Archivo no encontrado.' });
+  execFile('explorer.exe', ['/select,', ruta], () => res.json({ ok: true }));
+});
+
+// Abre el Explorador de Windows con el documento seleccionado (solo Windows).
+app.post('/api/eventos/:id/archivos/:nombre/abrir-carpeta', async (req, res) => {
+  const { id } = req.params;
+  if (!idValido(id)) return res.status(400).json({ error: 'ID no válido.' });
+  if (process.platform !== 'win32') return res.status(501).json({ error: 'Solo disponible en Windows.' });
+  const ruta = path.join(rutaDocs(id), path.basename(req.params.nombre));
+  if (!await fs.access(ruta).then(() => true, () => false)) return res.status(404).json({ error: 'Archivo no encontrado.' });
+  execFile('explorer.exe', ['/select,', ruta], () => res.json({ ok: true }));
+});
+
 app.post('/api/eventos/:id/archivos/:nombre/renombrar', async (req, res) => {
   const { id, nombre } = req.params;
   if (!idValido(id)) return res.status(400).json({ error: 'ID no válido.' });
@@ -412,12 +516,32 @@ app.post('/api/eventos/:id/archivos/:nombre/renombrar', async (req, res) => {
     await fs.rename(path.join(dir, viejo), path.join(dir, nuevo));
     if (ev.ocr && Object.prototype.hasOwnProperty.call(ev.ocr, viejo)) { ev.ocr[nuevo] = ev.ocr[viejo]; delete ev.ocr[viejo]; }
     if (ev.datos) {
-      for (const l of ev.datos.lignes || []) if (l.fichier_source === viejo) l.fichier_source = nuevo;
+      for (const l of ev.datos.lignes || []) {
+        if (l.fichier_source === viejo) l.fichier_source = nuevo;
+        if (Array.isArray(l.fichiers_source)) l.fichiers_source = l.fichiers_source.map((x) => x === viejo ? nuevo : x);
+      }
       if (Array.isArray(ev.datos.ordre_pieces)) ev.datos.ordre_pieces = ev.datos.ordre_pieces.map((x) => x === viejo ? nuevo : x);
     }
     await guardarEvento(id, ev);
     res.json({ ok: true, nombre: nuevo });
   } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/eventos/:id/archivos/:nombre/reextraer', async (req, res) => {
+  const { id, nombre } = req.params;
+  if (!idValido(id)) return res.status(400).json({ error: 'ID no válido.' });
+  const ev = await leerEvento(id);
+  if (!ev) return res.status(404).json({ error: 'Evento no encontrado.' });
+  const nom = path.basename(nombre);
+  if (!await fs.access(path.join(rutaDocs(id), nom)).then(() => true, () => false))
+    return res.status(404).json({ error: 'Archivo no encontrado.' });
+  try {
+    const transcription = await transcribirDocumento(ev, id, nom);
+    ev.ocr = ev.ocr || {};
+    ev.ocr[nom] = transcription;
+    await guardarEvento(id, ev);
+    res.json({ ok: true, transcription });
+  } catch (e) { console.error('Error al re-extraer:', e); res.status(500).json({ error: e.message }); }
 });
 
 app.post('/api/eventos/:id/analizar', async (req, res) => {
@@ -498,6 +622,7 @@ app.post('/api/personnes', async (req, res) => {
     titulaire: (b.titulaire || nom).trim(),
     iban: (b.iban || '').trim(), bic: (b.bic || '').trim(),
     banque: (b.banque || '').trim(), domiciliation: (b.domiciliation || '').trim(),
+    role: (b.role || 'membre').trim(),
     creado: Date.now(),
   };
   lista.push(p);
@@ -510,7 +635,7 @@ app.put('/api/personnes/:pid', async (req, res) => {
   const p = lista.find((x) => x.id === req.params.pid);
   if (!p) return res.status(404).json({ error: 'Persona no encontrada.' });
   const b = req.body || {};
-  for (const k of ['nom', 'titulaire', 'iban', 'bic', 'banque', 'domiciliation']) if (k in b) p[k] = (b[k] || '').trim();
+  for (const k of ['nom', 'titulaire', 'iban', 'bic', 'banque', 'domiciliation', 'role']) if (k in b) p[k] = (b[k] || '').trim();
   if (!p.nom) p.nom = p.titulaire || p.nom;
   await guardarPersonas(lista);
   res.json(p);
@@ -537,16 +662,27 @@ app.get('/api/firmas', async (req, res) => {
   res.json(e.filter((n) => !n.startsWith('.') && esImagenNombre(n)));
 });
 app.post('/api/firmas', async (req, res) => {
-  const { nombre, contenidoBase64 } = req.body || {};
+  const { nombre, contenidoBase64, nombreDestino } = req.body || {};
   if (!nombre || !contenidoBase64) return res.status(400).json({ error: 'Falta nombre o contenido.' });
   if (!esImagenNombre(nombre)) return res.status(400).json({ error: 'Solo se admiten imágenes.' });
-  const seguro = path.basename(nombre);
+  // Si se indica un nombre de destino (ej. Signature_<persona>_<rol>), se respeta
+  // su base y se conserva la extensión real de la imagen subida.
+  const ext = path.extname(nombre).toLowerCase();
+  const seguro = nombreDestino
+    ? path.basename(nombreDestino).replace(/\.[^.]*$/, '') + ext
+    : path.basename(nombre);
   await fs.mkdir(DIR_FIRMAS, { recursive: true });
   await fs.writeFile(path.join(DIR_FIRMAS, seguro), Buffer.from(contenidoBase64, 'base64'));
   res.json({ ok: true, nombre: seguro });
 });
 app.get('/api/firmas/:nombre', async (req, res) => {
   res.sendFile(path.join(DIR_FIRMAS, path.basename(req.params.nombre)));
+});
+app.delete('/api/firmas/:nombre', async (req, res) => {
+  const nombre = path.basename(req.params.nombre);
+  if (!esImagenNombre(nombre)) return res.status(400).json({ error: 'Nombre no válido.' });
+  await fs.rm(path.join(DIR_FIRMAS, nombre), { force: true });
+  res.json({ ok: true });
 });
 
 // ---------- PDF final: NDF (imágenes de página) + adjuntos ----------

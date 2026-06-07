@@ -52,7 +52,7 @@ La salida estructurada (`output_config.format` json_schema) sí funciona en Haik
   - **Apagado SOLO al cerrar la ventana**: el cliente manda `POST /api/cerrar` (sendBeacon en
     `pagehide`). El server programa apagado en 4 s; un `POST /api/ping` posterior (p. ej. tras un F5)
     lo **cancela**. NO hay apagado por inactividad/timeout.
-  - **Backups**: en cada `guardarEvento()` se copia el `evento.json` previo a `Dossiers/<id>/_backups/`
+  - **Backups**: en cada `guardarEvento()` se copia el `event.json` previo a `Dossiers/<id>/_backups/`
     (se conservan los últimos `MAX_BACKUPS`).
 - **Arranque (Windows)**: `Iniciar.vbs` (sin terminal), `Iniciar.bat` (delega en el .vbs),
   `Diagnostico.bat` (con ventana, para ver errores).
@@ -61,68 +61,89 @@ La salida estructurada (`output_config.format` json_schema) sí funciona en Haik
   - **i18n** (`i18n.js`): `t(clave, vars)` + `aplicarIdioma()` recorren `data-i18n` / `-ph` / `-title`.
     Idioma en `localStorage('idioma-ndf')`, selector FR/ES/EN junto a Thème. La **hoja NDF se queda
     en francés** (documento oficial); solo se traduce la interfaz.
-  - **Home**: eventos **agrupados por año**; **buscador** (`#buscar`) + **filtro de estado**; tarjetas
-    con nombre + pôle (subtítulo) + **color de borde según estado** + presupuesto + badge payé.
-    Creación en **modal** abierto por el **FAB "+"**. (NO hay emoji — eliminado.)
+  - **Home**: eventos **agrupados por año**; **buscador** (`#buscar`) + **chips de estado**
+    (`#chips-estado`, multi-selección; `estado.filtro.estados[]`, `renderChipsEstado`); tarjetas con
+    nombre + pôle (subtítulo) + **color de borde según estado** + presupuesto (NO hay badge payé; el
+    estado `rembourse` indica pagado). Creación en **modal** (FAB "+") con **zona drag&drop de
+    documentos** (`#crear-dropzone`, `crearDocs[]`): al crear se suben y se lanza el análisis.
   - **Análisis automático**: al subir/borrar docs se llama solo a `/analizar` (`lanzarAnalisis()`,
     cancelable por `estado.analisisToken`: resultado obsoleto se descarta; borrar un doc corta y relanza).
   - **Duplicados**: al subir, el server calcula sha256 y rechaza (409) si ya existe un documento idéntico.
-  - **Huérfanos**: documentos subidos que no aparecen en ninguna `ligne.fichier_source` → aviso en la NDF
+  - **Huérfanos**: documentos subidos que no aparecen en ninguna `ligne.fichiers_source` → aviso en la NDF
     (`#aviso-orphelins`) y badge rojo en la tarjeta (`documentosHuerfanos()`).
   - **IBAN del abonado** (`datos.iban`): viene de la persona elegida; editable en la NDF; **obligatorio
     para generar el PDF** (`generarPDF()` bloquea si está vacío). Siempre en euros (no hay multidivisa).
-  - **Base de personas (RIB)**: `personnes.json` (gitignored, datos bancarios). Pestaña/vista Personnes;
-    el "membre" al crear evento es un **desplegable** conectado a esa base (su IBAN se copia al evento).
-    Alta de persona desde la pestaña o desde el modal de creación (`personneVolverACrear`); el formulario
-    permite **importar un RIB** → `POST /api/personnes/extraire` (Claude extrae titulaire/iban/bic/banque).
+  - **Base de personas (RIB)**: `personnes.json` (gitignored, datos bancarios; **sin firma**). Es la
+    **primera pestaña** (vista Personnes); el "membre" al crear evento es un **desplegable** conectado a
+    esa base (su IBAN se copia al evento). Alta de persona desde la pestaña o desde el modal de creación
+    (`personneVolverACrear`); el formulario permite **importar un RIB** → `POST /api/personnes/extraire`
+    (Claude extrae titulaire/iban/bic/banque).
+  - **Pestañas jerárquicas**: `#tabs-home` (Personnes · Événements) **siempre visible**; al abrir un
+    evento aparece la subfila `#tabs.tabs-sub` (Documents/Analyse/NDF/Signée) y la pestaña Événements
+    muestra **↩** (`.ico-volver`, clase `editando`); pulsarla → `volverAEventos()`. No hay `#btn-volver`.
+  - **Tarjeta de info del evento** (1ª tarjeta de Documents): `renderInfoEvento()` rellena `#info-*`
+    (nom, section, date, budget, membre); `guardarInfoEvento()` (debounce) hace `PUT` de la meta y
+    **propaga a `datos`** (numero_ndf, section, asso, date_evenement, nom_membre, iban) replicando
+    `construirDatos`, luego `autoguardarDatos` + repagina.
+  - **NDF Signée** (`datos`/meta `ev.signee`): pestaña/vista para adjuntar la NDF firmada; se guarda en
+    la carpeta del evento como `<numero_ndf>_signee.<ext>` (`POST/GET/DELETE /api/eventos/:id/signee`,
+    `renderSignee`). Botón «Ouvrir le dossier» → `POST …/signee/abrir-carpeta`.
   - **Paginación A4 (importante)**: `paginarHoja()` mide la altura real `clientHeight - padding` de cada
     `.ndf-page` **solo cuando es visible**. Por eso `mostrarVista('ndf')` **re-pagina** (si se pagina con
     la pestaña oculta, `clientHeight=0` y cada fila salta de página). Reserva el alto del bloque de firmas
     (`altoFirmas()`) para que nunca se corten.
   - **Layout NDF**: 2 columnas. Izquierda = cartas (estado/budget+huérfanos, observaciones, orden de
-    piezas), sin scroll interno (se expanden). Derecha = leyenda de colores + hoja. Botón "Add new line"
-    arriba-derecha (`.ndf-toolbar`).
+    piezas), sin scroll interno (se expanden). Derecha = hoja + **aside** (`.ndf-aside`) con el botón
+    **« Ajouter une ligne »** (`#btn-add-ligne`, i18n `ndf.addLine`) arriba y la **leyenda** debajo;
+    `alinearComplementos()` le da margin-top para alinearlo con el inicio de la tabla.
   - **Confianza por línea**: `ligne.confiance` → **reborde superpuesto** de la celda (`td.art/td.prix
     ::after` con box-shadow inset), no fondo. Leyenda explicativa en la columna derecha.
   - **UI**: logo BDI arriba-izq (`header .app-logo`); `#topbar` (header+pestañas) **sticky**; errores de
     validación **dentro del modal** (`.modal-error`, no toast de fondo).
-  - **Autoguardado** (`autoguardarDatos` / `autoguardarOcr`, debounce) y `guardarMeta()` (estado, payé,
-    budget). No hay botón de guardar; atajo **Ctrl+S** fuerza, **Ctrl+P** genera PDF, ←/→ navegan en Analyse.
+  - **Autoguardado** (`autoguardarDatos` / `autoguardarOcr`, debounce); `guardarMeta()` (estado, budget)
+    y `guardarInfoEvento()` (nom/section/date/budget/membre + propagación). No hay botón de guardar;
+    atajo **Ctrl+S** fuerza, **Ctrl+P** genera PDF, ←/→ navegan en Analyse.
   - **NDF paginada A4**: `paginarHoja()` reparte filas en varias `.ndf-page` midiendo la altura real de
     los hijos contra un presupuesto en px (NO usar `scrollHeight`: la página tiene altura fija 297mm).
   - **Confianza por línea**: cada `ligne.confiance` ∈ haute/moyenne/basse tiñe la fila (verde/ámbar/rojo).
     Durante la exportación se añade la clase `exportando` a `#hoja-ndf` para ocultar tintes/botones/bordes.
-  - **Firmas**: botones flotantes en las celdas (tesorero y miembro), `elegirFirma('tesorero'|'membre')`.
+  - **Firma**: **solo el tesorero de l'asso mère** (`datos.signature`); la celda del miembro queda
+    **vacía** (firma física → se adjunta en la pestaña Signée). `elegirFirma()` (sin arg) lista solo
+    `Signature_Trez_BDI_*`; cada tarjeta del modal tiene una **✕** que la borra (`DELETE /api/firmas/:n`);
+    botón **✕** en la hoja → `quitarFirma()`.
   - **Orden de adjuntos**: cards reordenables (drag&drop) en `#ordre-cards` → `datos.ordre_pieces`.
+  - **Ayuda única**: un solo botón `#btn-howto-global` (header) → `abrirAyudaGlobal()` concatena todas
+    las secciones de `AYUDA` (incl. `signee`) en `#modal-howto` (`.modal-howto-grande`).
   - **Modales**: crear evento, visor doc (`#modal-doc`), firma (`#modal-firma`), ayuda (`#modal-howto`).
-- **Datos** `Dossiers/<id>/`: `evento.json` (todo), `Documents/` (ficheros), `_backups/` (copias).
-- **Firmas**: carpeta **`Signatures/`** a nivel de app (gitignored), compartida por tesorero y miembro.
+- **Datos** `Dossiers/<id>/`: `event.json` (todo), `Documents/` (ficheros), `_backups/` (copias).
+- **Firmas**: carpeta **`Signatures/`** a nivel de app (gitignored); solo firmas del tesorero de l'asso
+  mère (`Signature_Trez_BDI_*`).
 
-## Modelo de datos (`evento.json`)
+## Modelo de datos (`event.json`)
 
 ```jsonc
 {
   "id", "nom", "section", "membre", "date", "creado",
   "iban": "FR76…",          // IBAN del abonado (opcional al crear; obligatorio para el PDF)
   "budget": 300,            // presupuesto máx del BDI (número o null)
-  "estado": "brouillon",    // brouillon|a_verifier|valide|envoye|rembourse
-  "paye": false,            // pagado o no
+  "estado": "brouillon",    // brouillon|a_verifier|valide|envoye|rembourse (= pagado)
+  "signee": "..._signee.pdf",  // NDF firmada adjuntada en la pestaña Signée (o null)
   "ocr": { "facture1.pdf": "texto transcrito", ... },
   "datos": {
     "numero_ndf": "NDF_<nom-con-guiones>_<año>",
     "date_emission", "nom_membre", "section", "asso", "adresse", "date_evenement",
-    "lignes": [ { "article","date_achat","prix_ht","taux_tva","montant_ttc","fichier_source","confiance" } ],
+    "lignes": [ { "article","date_achat","prix_ht","taux_tva","montant_ttc","fichiers_source","confiance" } ],
     "observations": [ "remarque 1", ... ],   // array
     "iban": "FR76…",                         // IBAN (espejo editable del de meta)
-    "signature": "fichero.png",              // firma tesorero (en /Signatures)
-    "signature_membre": "fichero.png",       // firma miembro
+    "signature": "fichero.png",              // firma tesorero asso mère (en /Signatures)
     "ordre_pieces": [ "ticket.jpeg", "facture.pdf" ]  // orden en el PDF final
   }
 }
 ```
 
 Reglas de negocio (no romper):
-- `nom_membre`, `section`, `date`, `budget` vienen **del evento** (creación), NO de los documentos.
+- `nom_membre`, `section`, `date`, `budget` vienen **del evento**; editables en la **tarjeta de info**
+  de Documents, que **propaga** los cambios a `datos` (no se editan desde los documentos).
 - `section` ∈ 6 pôles: **Events, RelEnt, Trez, Soirée, Comm, Cohez** (`Bureau de l'International (Pôle X)`).
 - `numero_ndf` = `NDF_` + nombre con guiones + `_` + año (de `date`).
 - Dirección por defecto: `3 rue Joliot Curie, 91190, Gif-sur-Yvette`.
@@ -136,7 +157,7 @@ Reglas de negocio (no romper):
 |---|---|---|
 | GET/POST | `/api/eventos` | listar / crear (nom, section, membre, date, budget) |
 | GET | `/api/eventos/:id` | detalle |
-| PUT | `/api/eventos/:id` | actualizar meta (estado, paye, budget, membre) |
+| PUT | `/api/eventos/:id` | actualizar meta (nom, section, date, estado, budget, membre, iban) |
 | DELETE | `/api/eventos/:id` | borrar evento |
 | POST/DELETE/GET | `/api/eventos/:id/archivos[/:n]` | subir / borrar / servir fichero |
 | POST | `/api/eventos/:id/archivos/:n/renombrar` | renombrar |
@@ -145,9 +166,11 @@ Reglas de negocio (no romper):
 | POST | `/api/eventos/:id/regenerar` | re-extraer desde transcripciones |
 | PUT | `/api/eventos/:id/datos` | guardar la NDF (autoguardado) |
 | POST | `/api/eventos/:id/pdf` | **PDF final** (NDF rasterizada + adjuntos) |
+| POST/GET/DELETE | `/api/eventos/:id/signee` | adjuntar / servir / borrar la NDF firmada (`_signee`) |
+| POST | `/api/eventos/:id/signee/abrir-carpeta` | abrir la NDF firmada en el Explorador |
 | GET/POST/PUT/DELETE | `/api/personnes[/:pid]` | CRUD de personas (base de RIB) |
 | POST | `/api/personnes/extraire` | extraer datos bancarios de un RIB (Claude) |
-| GET/POST | `/api/firmas` · GET `/api/firmas/:n` | listar / subir / servir firmas |
+| GET/POST/DELETE | `/api/firmas[/:n]` | listar / subir / servir / borrar firmas |
 | POST | `/api/ping` · `/api/cerrar` | latido / cierre por ventana |
 
 ## La hoja NDF (réplica del modelo oficial)

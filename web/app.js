@@ -14,7 +14,7 @@ const estado = {
   activo: null,
   analizando: false,
   analisisToken: 0,
-  filtro: { texto: '', estado: '' },
+  filtro: { texto: '', estados: [] },
 };
 
 const ESTADOS = ['brouillon', 'a_verifier', 'valide', 'envoye', 'rembourse'];
@@ -59,6 +59,12 @@ const esImagen = (n) => /\.(jpe?g|png|webp|gif|bmp)$/i.test(n);
 const urlArchivo = (id, n) => `/api/eventos/${id}/archivos/${encodeURIComponent(n)}`;
 function totalTTC(d) { let t = 0; for (const l of (d?.lignes || [])) t += (Number(l.prix_ht) || 0) * (1 + tasaTVA(l.taux_tva)); return t; }
 
+function rolLabel(role) { return t('role.' + (role || 'membre')) || (role || ''); }
+function slugNombre(n) {
+  return String(n || '').normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .replace(/[^a-zA-Z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'Personne';
+}
+
 // Enlace al repo + idioma
 $('#link-repo').href = REPO_URL;
 $('#sel-idioma').value = IDIOMA;
@@ -68,13 +74,21 @@ $('#sel-idioma').addEventListener('change', (e) => {
 });
 function reRenderTodo() {
   pintarEstado($('#estado-servidor').classList.contains('conectado'));
-  if (!estado.activo) renderEventos();
-  else { renderDocumentos(); renderAnalyse(); renderNDF(); }
+  renderChipsEstado();
+  if (!estado.activo) { renderEventos(); renderPersonnes(); }
+  else { renderInfoEvento(); renderDocumentos(); renderAnalyse(); renderNDF(); renderSignee(); }
 }
 
 // ---------- Navegación ----------
 $$('#tabs button[data-vista]').forEach((b) => b.addEventListener('click', () => mostrarVista(b.dataset.vista)));
-$('#btn-volver').addEventListener('click', volverAEventos);
+// Pestañas de inicio (siempre visibles): Personnes · Événements.
+$$('#tabs-home button[data-home]').forEach((b) => b.addEventListener('click', () => {
+  if (b.dataset.home === 'personnes') mostrarPersonnes();
+  else volverAEventos();
+}));
+function marcarHome(cual) {
+  $$('#tabs-home button[data-home]').forEach((b) => b.classList.toggle('activa', b.dataset.home === cual));
+}
 function mostrarVista(nombre) {
   $$('#tabs button[data-vista]').forEach((b) => b.classList.toggle('activa', b.dataset.vista === nombre));
   $$('.vista').forEach((v) => v.classList.remove('activa'));
@@ -82,10 +96,13 @@ function mostrarVista(nombre) {
   // La paginación A4 necesita que la hoja sea visible para medir alturas;
   // se repagina al mostrar la pestaña Note de Frais.
   if (nombre === 'ndf' && datos()) paginarHoja(datos());
+  if (nombre === 'signee') renderSignee();
 }
 function volverAEventos() {
   estado.activo = null;
   $('#tabs').style.display = 'none';
+  marcarHome('eventos');
+  $('#tabs-home button[data-home="eventos"]').classList.remove('editando');
   $('#evento-activo').textContent = t('header.noEvent');
   $('#fab-crear').style.display = '';
   $$('.vista').forEach((v) => v.classList.remove('activa'));
@@ -107,11 +124,27 @@ $('#btn-tema').addEventListener('click', () => {
 async function cargarEventos() { estado.eventos = await api('/eventos'); renderEventos(); }
 
 $('#buscar').addEventListener('input', (e) => { estado.filtro.texto = e.target.value.toLowerCase(); renderEventos(); });
-$('#filtro-estado').addEventListener('change', (e) => { estado.filtro.estado = e.target.value; renderEventos(); });
+
+// Chips de estado (multi-selección): ninguno seleccionado = todos.
+function renderChipsEstado() {
+  const cont = $('#chips-estado'); if (!cont) return;
+  cont.innerHTML = '';
+  for (const est of ESTADOS) {
+    const chip = document.createElement('button');
+    chip.className = `chip est-${est}` + (estado.filtro.estados.includes(est) ? ' activo' : '');
+    chip.textContent = t('estado.' + est);
+    chip.addEventListener('click', () => {
+      const i = estado.filtro.estados.indexOf(est);
+      if (i >= 0) estado.filtro.estados.splice(i, 1); else estado.filtro.estados.push(est);
+      renderChipsEstado(); renderEventos();
+    });
+    cont.appendChild(chip);
+  }
+}
 
 function coincide(ev) {
-  const { texto, estado: est } = estado.filtro;
-  if (est && (ev.estado || 'brouillon') !== est) return false;
+  const { texto, estados } = estado.filtro;
+  if (estados.length && !estados.includes(ev.estado || 'brouillon')) return false;
   if (!texto) return true;
   return [ev.nom, seccionDe(ev), ev.membre, anioDe(ev)].join(' ').toLowerCase().includes(texto);
 }
@@ -154,7 +187,6 @@ function tarjetaEvento(ev) {
     </div>
     <div class="ev-meta2">
       ${ev.budget != null ? `<span class="ev-budget">${numFR(ev.budget)} €</span>` : '<span></span>'}
-      <span class="badge-paye ${ev.paye ? 'si' : 'no'}">${ev.paye ? t('paye.yes') : t('paye.no')}</span>
     </div>`;
   div.addEventListener('click', (e) => { if (e.target.closest('.btn-borrar-ev')) return; abrirEvento(ev.id); });
   div.querySelector('.btn-borrar-ev').addEventListener('click', async (e) => {
@@ -167,8 +199,10 @@ function tarjetaEvento(ev) {
 }
 
 // ---- Modal de creación (FAB "+") ----
+let crearDocs = [];   // ficheros adjuntados en el modal (se suben tras crear el evento)
 function abrirCrear() {
   $('#crear-error').textContent = '';
+  crearDocs = []; renderCrearDocs();
   llenarSelectorPersonas();
   $('#modal-crear').classList.add('show');
   $('#nuevo-nom').focus();
@@ -177,6 +211,31 @@ function cerrarCrear() { $('#modal-crear').classList.remove('show'); }
 $('#fab-crear').addEventListener('click', abrirCrear);
 $('#crear-cerrar').addEventListener('click', cerrarCrear);
 $('#modal-crear').addEventListener('click', (e) => { if (e.target.id === 'modal-crear') cerrarCrear(); });
+
+// Documentos adjuntados en el modal (staged): chips con borrar.
+function renderCrearDocs() {
+  const cont = $('#crear-docs-lista'); if (!cont) return;
+  cont.innerHTML = '';
+  crearDocs.forEach((f, i) => {
+    const chip = document.createElement('span');
+    chip.className = 'doc-chip';
+    chip.innerHTML = `<span class="doc-chip-nom">${escapar(f.name)}</span><button class="doc-chip-del" title="✕" type="button">✕</button>`;
+    chip.querySelector('.doc-chip-del').addEventListener('click', () => { crearDocs.splice(i, 1); renderCrearDocs(); });
+    cont.appendChild(chip);
+  });
+}
+function anadirCrearDocs(files) {
+  for (const f of files) crearDocs.push(f);
+  renderCrearDocs();
+}
+$('#crear-add-docs').addEventListener('click', () => $('#crear-file-input').click());
+$('#crear-file-input').addEventListener('change', () => { anadirCrearDocs($('#crear-file-input').files); $('#crear-file-input').value = ''; });
+{
+  const z = $('#crear-dropzone');
+  z.addEventListener('dragover', (e) => { e.preventDefault(); z.classList.add('dragover'); });
+  z.addEventListener('dragleave', (e) => { if (!z.contains(e.relatedTarget)) z.classList.remove('dragover'); });
+  z.addEventListener('drop', (e) => { e.preventDefault(); z.classList.remove('dragover'); anadirCrearDocs(e.dataTransfer.files); });
+}
 
 // Rellena el desplegable de personas en el modal de creación.
 function llenarSelectorPersonas(seleccionar) {
@@ -208,8 +267,11 @@ $('#btn-crear').addEventListener('click', async () => {
   }) });
   $('#nuevo-nom').value = $('#nuevo-date').value = $('#nuevo-budget').value = '';
   $('#nuevo-section').selectedIndex = 0; $('#nuevo-membre-sel').value = ''; mostrarIbanPersona();
+  const docs = crearDocs; crearDocs = [];
   cerrarCrear(); toast(t('event.created'));
   await cargarEventos(); await abrirEvento(ev.id);
+  // Sube los documentos adjuntados en el modal; subirArchivos lanza el análisis al terminar.
+  if (docs.length) await subirArchivos(docs);
 });
 
 // ============================================================
@@ -217,17 +279,18 @@ $('#btn-crear').addEventListener('click', async () => {
 // ============================================================
 async function cargarPersonas() { estado.personas = await api('/personnes').catch(() => []); }
 
-function mostrarPersonnes() {
+async function mostrarPersonnes() {
   estado.activo = null;
   $('#tabs').style.display = 'none';
+  marcarHome('personnes');
+  $('#tabs-home button[data-home="eventos"]').classList.remove('editando');
   $('#fab-crear').style.display = 'none';
   $('#evento-activo').textContent = t('header.noEvent');
   $$('.vista').forEach((v) => v.classList.remove('activa'));
   $('#vista-personnes').classList.add('activa');
+  await cargarPersonas();
   renderPersonnes();
 }
-$('#btn-personnes').addEventListener('click', async () => { await cargarPersonas(); mostrarPersonnes(); });
-$('#btn-volver-perso').addEventListener('click', volverAEventos);
 
 function renderPersonnes() {
   const cont = $('#personnes-lista');
@@ -235,19 +298,21 @@ function renderPersonnes() {
   cont.innerHTML = '';
   for (const p of estado.personas) {
     const row = document.createElement('div');
-    row.className = 'personne-row';
+    row.className = 'personne-row clicable';
+    row.title = t('person.edit');
     row.innerHTML = `
       <div class="personne-info">
         <div class="personne-nom">${escapar(p.nom)}</div>
+        <div class="personne-role muted">${escapar(rolLabel(p.role))}</div>
         <div class="personne-iban">${escapar(p.iban || '—')}</div>
         <div class="personne-extra muted">${[p.bic, p.banque].filter(Boolean).map(escapar).join(' · ')}</div>
       </div>
       <div class="barra-acciones">
-        <button class="sec peque btn-edit">${t('person.edit')}</button>
         <button class="peligro peque btn-del">${t('person.del')}</button>
       </div>`;
-    row.querySelector('.btn-edit').addEventListener('click', () => abrirPersonne(p));
-    row.querySelector('.btn-del').addEventListener('click', async () => {
+    row.addEventListener('click', (e) => { if (e.target.closest('button')) return; abrirPersonne(p); });
+    row.querySelector('.btn-del').addEventListener('click', async (e) => {
+      e.stopPropagation();
       if (!confirm(t('personnes.confirmDel', { x: p.nom }))) return;
       await api('/personnes/' + p.id, { method: 'DELETE' });
       await cargarPersonas(); renderPersonnes(); toast(t('personnes.deleted'));
@@ -264,6 +329,7 @@ function abrirPersonne(p, desdeCrear) {
   personneVolverACrear = !!desdeCrear;
   $('#personne-titulo').textContent = personneEditId ? t('person.editTitle') : t('person.addTitle');
   $('#p-titulaire').value = p?.titulaire || p?.nom || '';
+  $('#p-role').value = p?.role || 'membre';
   $('#p-iban').value = p?.iban || '';
   $('#p-bic').value = p?.bic || '';
   $('#p-banque').value = p?.banque || '';
@@ -302,8 +368,9 @@ $('#btn-save-personne').addEventListener('click', async () => {
   const err = $('#personne-error');
   if (!titulaire) { err.textContent = t('person.needName'); return; }
   err.textContent = '';
+  const role = $('#p-role').value || 'membre';
   const cuerpo = {
-    nom: titulaire, titulaire,
+    nom: titulaire, titulaire, role,
     iban: $('#p-iban').value.trim(), bic: $('#p-bic').value.trim(),
     banque: $('#p-banque').value.trim(), domiciliation: $('#p-domiciliation').value.trim(),
   };
@@ -322,9 +389,12 @@ async function abrirEvento(id) {
   estado.activo.ocr = estado.activo.ocr || {};
   estado.analizando = false; estado.analisisToken++;
   $('#evento-activo').textContent = `${seccionDe(estado.activo)} — ${estado.activo.nom}`;
+  // Pestañas jerárquicas: la fila Personnes/Événements sigue visible; aparece la subfila.
+  marcarHome('eventos');
+  $('#tabs-home button[data-home="eventos"]').classList.add('editando');
   $('#tabs').style.display = '';
   $('#fab-crear').style.display = 'none';
-  renderDocumentos(); renderAnalyse(); renderNDF();
+  renderInfoEvento(); renderDocumentos(); renderAnalyse(); renderNDF(); renderSignee();
   mostrarVista('documents');
 }
 async function recargarActivo() {
@@ -337,6 +407,68 @@ async function recargarActivo() {
 // ============================================================
 //  DOCUMENTS
 // ============================================================
+// ---- Tarjeta de info del evento (editable, autoguardado, propaga a la NDF) ----
+function renderInfoEvento() {
+  const a = estado.activo; if (!a) return;
+  $('#info-nom').value = a.nom || '';
+  $('#info-section').value = a.section || '';
+  $('#info-date').value = a.date || '';
+  $('#info-budget').value = a.budget != null ? a.budget : '';
+  // Selector de personas (valor = id); se preselecciona por nombre del membre actual.
+  const sel = $('#info-membre-sel');
+  sel.innerHTML = `<option value="">${t('form.choosePerson')}</option>` +
+    estado.personas.map((p) => `<option value="${p.id}">${escapar(p.nom)}</option>`).join('');
+  const actual = estado.personas.find((p) => (p.nom || '') === (a.membre || ''));
+  sel.value = actual ? actual.id : '';
+  mostrarIbanInfo();
+}
+function mostrarIbanInfo() {
+  const p = estado.personas.find((x) => x.id === $('#info-membre-sel').value);
+  $('#info-iban-preview').textContent = p && p.iban ? `IBAN : ${p.iban}` : '';
+}
+let tInfo;
+function guardarInfoEvento() {
+  const a = estado.activo; if (!a) return;
+  $('#info-autosave').textContent = t('ndf.saving');
+  a.nom = $('#info-nom').value.trim();
+  a.section = $('#info-section').value;
+  a.date = $('#info-date').value;
+  const bRaw = $('#info-budget').value;
+  a.budget = (bRaw === '' || bRaw == null) ? null : Number(bRaw);
+  const persona = estado.personas.find((x) => x.id === $('#info-membre-sel').value);
+  if (persona) { a.membre = persona.nom; a.iban = persona.iban || ''; }
+  mostrarIbanInfo();
+  // Refleja en cabecera y en la lista de inicio.
+  $('#evento-activo').textContent = `${seccionDe(a)} — ${a.nom}`;
+  const it = estado.eventos.find((e) => e.id === a.id);
+  if (it) { it.nom = a.nom; it.section = a.section; it.date = a.date; it.budget = a.budget; it.membre = a.membre; }
+  // Propaga a la hoja NDF (derivación idéntica a construirDatos del servidor).
+  const d = a.datos;
+  if (d) {
+    const annee = (a.date && a.date.slice(0, 4)) || String(new Date().getFullYear());
+    d.numero_ndf = `NDF_${(a.nom || '').trim().replace(/\s+/g, '-')}_${annee}`;
+    d.section = a.section || '';
+    d.asso = `Bureau de l'International (${a.section || ''})`;
+    d.date_evenement = a.date || '';
+    if (persona) { d.nom_membre = persona.nom; d.iban = persona.iban || ''; }
+    autoguardarDatos();
+    if ($('#vista-ndf').classList.contains('activa')) paginarHoja(d); else renderNDF();
+    pintarBudget();
+  }
+  // Guardado de meta (debounced).
+  clearTimeout(tInfo);
+  tInfo = setTimeout(async () => {
+    try {
+      await api(`/eventos/${a.id}`, { method: 'PUT', body: JSON.stringify({
+        nom: a.nom, section: a.section, date: a.date, budget: a.budget, membre: a.membre, iban: a.iban,
+      }) });
+      $('#info-autosave').textContent = t('ndf.saved');
+    } catch { $('#info-autosave').textContent = '⚠'; }
+  }, 500);
+}
+['#info-nom', '#info-budget'].forEach((s) => $(s).addEventListener('input', guardarInfoEvento));
+['#info-section', '#info-date', '#info-membre-sel'].forEach((s) => $(s).addEventListener('change', guardarInfoEvento));
+
 function renderDocumentos() {
   const cont = $('#doc-cards');
   $('#n-docs').textContent = estado.activo.archivos.length;
@@ -358,14 +490,14 @@ function tarjetaDoc(nom, conAcciones) {
       <div class="nombre" ${conAcciones ? 'contenteditable="true"' : ''} spellcheck="false" title="${t('docs.clickRename')}">${escapar(nom)}</div>
       ${conAcciones ? `<div class="acciones">
         <button class="sec peque btn-voir">${t('docs.view')}</button>
-        <button class="sec peque btn-open">${t('docs.openTab')}</button>
+        <button class="sec peque btn-carpeta">${t('docs.openFolder')}</button>
         <button class="peligro peque btn-del">✕</button>
       </div>` : ''}
     </div>`;
   if (conAcciones) {
     card.addEventListener('click', (e) => { if (e.target.closest('button, a, .nombre')) return; irAnalyse(nom); });
     card.querySelector('.btn-voir').addEventListener('click', (e) => { e.stopPropagation(); abrirVisor(nom); });
-    card.querySelector('.btn-open').addEventListener('click', (e) => { e.stopPropagation(); window.open(urlArchivo(estado.activo.id, nom), '_blank'); });
+    card.querySelector('.btn-carpeta').addEventListener('click', (e) => { e.stopPropagation(); abrirCarpeta(nom); });
     conectarNombreEditable(card.querySelector('.nombre'), nom);
     card.querySelector('.btn-del').addEventListener('click', async (e) => {
       e.stopPropagation();
@@ -387,6 +519,26 @@ function abrirVisor(nom) {
   $('#doc-titulo').textContent = nom;
   $('#doc-visor').innerHTML = esImagen(nom) ? `<img src="${url}" alt="${escapar(nom)}" />` : `<iframe src="${url}" title="${escapar(nom)}"></iframe>`;
   $('#modal-doc').classList.add('show');
+}
+async function reextraerDocumento(nom, btn) {
+  if (!estado.activo) return;
+  const original = btn.innerHTML;
+  btn.disabled = true; btn.innerHTML = `<span class="spinner"></span> ${t('analyse.retrying')}`;
+  try {
+    const r = await api(`/eventos/${estado.activo.id}/archivos/${encodeURIComponent(nom)}/reextraer`, { method: 'POST' });
+    estado.activo.ocr = estado.activo.ocr || {};
+    estado.activo.ocr[nom] = r.transcription;
+    renderAnalyse();
+    toast(t('analyse.retried'));
+  } catch (e) {
+    toast(e.message, true);
+    btn.disabled = false; btn.innerHTML = original;
+  }
+}
+async function abrirCarpeta(nom) {
+  try {
+    await api(`/eventos/${estado.activo.id}/archivos/${encodeURIComponent(nom)}/abrir-carpeta`, { method: 'POST' });
+  } catch (e) { toast(e.message, true); }
 }
 function cerrarVisor() { $('#modal-doc').classList.remove('show'); $('#doc-visor').innerHTML = ''; }
 $('#doc-cerrar').addEventListener('click', cerrarVisor);
@@ -431,7 +583,7 @@ async function pintarMiniatura(cont, id, nom) {
 }
 
 // Drag & drop sobre la zona de tarjetas + botón añadir
-['dragover', 'drop'].forEach((ev) => window.addEventListener(ev, (e) => { if (!e.target.closest('.dropzone-cards')) e.preventDefault(); }));
+['dragover', 'drop'].forEach((ev) => window.addEventListener(ev, (e) => { if (!e.target.closest('.dropzone-cards, .dropzone-signee, .dropzone-crear')) e.preventDefault(); }));
 const zonaCards = $('#doc-cards');
 const fileInput = $('#file-input');
 zonaCards.addEventListener('dragover', (e) => { e.preventDefault(); zonaCards.classList.add('dragover'); });
@@ -503,7 +655,8 @@ function renderAnalyse() {
     item.innerHTML = `
       <div class="analyse-head">
         <h4 class="nombre-doc" contenteditable="true" spellcheck="false" title="${t('docs.clickRename')}">${escapar(nom)}</h4>
-        <button class="sec peque btn-open">${t('docs.openTab')}</button>
+        <button class="sec peque btn-carpeta">${t('docs.openFolder')}</button>
+        <button class="sec peque btn-reextraer">${t('analyse.retry')}</button>
       </div>
       <div class="analyse-split">
         <div class="orig">${orig}</div>
@@ -511,7 +664,8 @@ function renderAnalyse() {
       </div>`;
     const ta = item.querySelector('textarea');
     if (ta) ta.addEventListener('input', (e) => { a.ocr[nom] = e.target.value; autoguardarOcr(); });
-    item.querySelector('.btn-open').addEventListener('click', () => window.open(urlArchivo(a.id, nom), '_blank'));
+    item.querySelector('.btn-carpeta').addEventListener('click', () => abrirCarpeta(nom));
+    item.querySelector('.btn-reextraer').addEventListener('click', (e) => reextraerDocumento(nom, e.currentTarget));
     conectarNombreEditable(item.querySelector('.nombre-doc'), nom);
     cont.appendChild(item);
   }
@@ -554,7 +708,10 @@ async function guardarMeta(campos) {
   if (!estado.activo) return;
   try {
     const r = await api(`/eventos/${estado.activo.id}`, { method: 'PUT', body: JSON.stringify(campos) });
-    estado.activo.estado = r.estado; estado.activo.paye = r.paye; estado.activo.budget = r.budget;
+    estado.activo.estado = r.estado; estado.activo.budget = r.budget;
+    // Mantén sincronizada la lista de la home (color del borde y badge "payé"=remboursé al volver).
+    const it = estado.eventos.find((e) => e.id === estado.activo.id);
+    if (it) { it.estado = r.estado; it.budget = r.budget; }
     indicar(t('ndf.saved'));
   } catch { indicar('⚠'); }
 }
@@ -572,9 +729,8 @@ function renderNDF() {
   if (!Array.isArray(d.observations)) d.observations = d.observations ? [d.observations] : [];
   if (!Array.isArray(d.ordre_pieces) || !d.ordre_pieces.length) d.ordre_pieces = estado.activo.archivos.slice();
 
-  // Control: estado, pagado, presupuesto
+  // Control: estado, presupuesto (el estado "remboursé" indica que está pagado)
   $('#sel-estado').value = estado.activo.estado || 'brouillon';
-  pintarPaye();
   pintarBudget();
 
   renderObservations(d);
@@ -583,11 +739,16 @@ function renderNDF() {
   paginarHoja(d);
 }
 
-// Documentos subidos que no aparecen en ninguna línea (fichier_source).
+// Documentos subidos que no aparecen en ninguna línea (fichiers_source / fichier_source).
 function documentosHuerfanos(d) {
   if (!d || !Array.isArray(d.lignes)) return [];
-  const usados = new Set((d.lignes || []).map((l) => l.fichier_source).filter(Boolean));
-  return (estado.activo?.archivos || []).filter((n) => !usados.has(n));
+  const norm = (s) => String(s || '').trim().toLowerCase();
+  const usados = new Set();
+  for (const l of d.lignes || []) {
+    if (Array.isArray(l.fichiers_source)) for (const f of l.fichiers_source) if (f) usados.add(norm(f));
+    if (l.fichier_source) usados.add(norm(l.fichier_source));   // compat. con datos antiguos
+  }
+  return (estado.activo?.archivos || []).filter((n) => !usados.has(norm(n)));
 }
 function renderHuerfanos(d) {
   const box = $('#aviso-orphelins'); if (!box) return;
@@ -597,20 +758,14 @@ function renderHuerfanos(d) {
   box.innerHTML = `<b>${escapar(t('docs.orphanTitle'))}</b><ul>${orf.map((n) => `<li>${escapar(n)}</li>`).join('')}</ul>`;
 }
 
-function pintarPaye() {
-  const b = $('#btn-paye');
-  b.textContent = estado.activo.paye ? t('paye.yes') : t('paye.no');
-  b.classList.toggle('si', estado.activo.paye);
-}
 function pintarBudget() {
   const el = $('#budget-info'); const bud = estado.activo.budget;
   if (bud == null) { el.textContent = t('budget.none'); el.className = 'budget-info none'; return; }
-  const rest = bud - totalTTC(datos());
-  if (rest >= 0) { el.textContent = `${t('budget.left')} : ${eur(rest)} / ${numFR(bud)} €`; el.className = 'budget-info ok'; }
-  else { el.textContent = `${t('budget.over')} : ${eur(-rest)} (max ${numFR(bud)} €)`; el.className = 'budget-info over'; }
+  const gastado = totalTTC(datos());
+  el.textContent = `${t('budget.spent')} : ${eur(gastado)} / ${numFR(bud)} €`;
+  el.className = 'budget-info ' + (gastado > bud ? 'over' : 'ok');
 }
-$('#sel-estado').addEventListener('change', (e) => guardarMeta({ estado: e.target.value }).then(() => { /* refresca color en home al volver */ }));
-$('#btn-paye').addEventListener('click', () => { estado.activo.paye = !estado.activo.paye; pintarPaye(); guardarMeta({ paye: estado.activo.paye }); });
+$('#sel-estado').addEventListener('change', (e) => guardarMeta({ estado: e.target.value }));
 
 function renderObservations(d) {
   const cont = $('#obs-lista'); if (!cont) return;
@@ -627,6 +782,13 @@ function renderObservations(d) {
   });
 }
 $('#btn-add-obs').addEventListener('click', () => { const d = datos(); if (!d) return; (d.observations ||= []).push(''); renderObservations(d); autoguardarDatos(); });
+
+// Botón "Ajouter une ligne" (aside, junto a la tabla). Cableado una sola vez.
+$('#btn-add-ligne').addEventListener('click', () => {
+  const d = datos(); if (!d) return;
+  (d.lignes ||= []).push({ article: '', date_achat: '', prix_ht: 0, taux_tva: 0, montant_ttc: 0, fichiers_source: [], confiance: 'haute' });
+  paginarHoja(d); autoguardarDatos();
+});
 
 // ---- Orden de las piezas adjuntas (cards reordenables) ----
 function renderOrdre(d) {
@@ -702,10 +864,23 @@ function filaLigne(l, i) {
   const conf = ['haute', 'moyenne', 'basse'].includes(l.confiance) ? l.confiance : '';
   return `<tr data-i="${i}" class="${conf ? 'conf-' + conf : ''}">
       <td class="art"><button class="btn-quitar no-print" title="✕">✕</button><div class="ed" data-l="article" contenteditable="true">${escapar(l.article || '')}</div></td>
-      <td><input data-l="date_achat" value="${escapar(l.date_achat || '')}" /></td>
+      <td><input data-l="date_achat" inputmode="numeric" value="${escapar(l.date_achat || '')}" /></td>
       <td class="prix"><span class="ed num" data-l="prix_ht" contenteditable="true">${l.prix_ht === '' || l.prix_ht == null ? '' : numFR(l.prix_ht)}</span> €</td>
-      <td><input data-l="taux_tva" value="${escapar(l.taux_tva || '0%')}" /></td>
+      <td class="taux"><span class="ed num" data-l="taux_tva" contenteditable="true">${tvaStr(l.taux_tva)}</span> %</td>
     </tr>`;
+}
+// TVA: el dato es numérico (porcentaje). Mostrar sin decimales superfluos.
+function tvaNum(v) { const n = parseFloat(String(v ?? '').replace(',', '.').replace('%', '')); return isNaN(n) ? 0 : n; }
+function tvaStr(v) { const n = tvaNum(v); return Number.isInteger(n) ? String(n) : String(n).replace('.', ','); }
+// Restringe la entrada de un campo (input o contenteditable) a los caracteres permitidos.
+function soloPermitidos(el, re) {
+  el.addEventListener('beforeinput', (e) => {
+    if (e.inputType === 'insertText' && e.data && [...e.data].some((c) => !re.test(c))) e.preventDefault();
+    if (e.inputType === 'insertFromPaste') {
+      const txt = (e.dataTransfer || window.clipboardData)?.getData?.('text') || '';
+      if (txt && [...txt].some((c) => !re.test(c))) e.preventDefault();
+    }
+  });
 }
 function htmlTotales(d) {
   let ht = 0, ttc = 0;
@@ -714,12 +889,13 @@ function htmlTotales(d) {
 }
 function htmlSign(d) {
   const fT = d.signature ? `<img class="firma-img" src="/api/firmas/${encodeURIComponent(d.signature)}" alt="signature" />` : '';
-  const fM = d.signature_membre ? `<img class="firma-img" src="/api/firmas/${encodeURIComponent(d.signature_membre)}" alt="signature" />` : '';
+  // Si hay firma puesta, se ofrece un botón para retirarla (p. ej. para firmar de otra forma).
+  const quitarT = d.signature ? `<button class="btn-firma-quitar no-print" title="${t('ndf.removeSign')}">✕</button>` : '';
   return `<table class="ndf-sign"><colgroup><col /><col /></colgroup><tbody>
       <tr class="cab"><th>Signature du trésorier de la section/de l'asso mère</th><th>Signature du membre ayant engagé les dépenses</th></tr>
       <tr class="firma">
-        <td class="cell-firma">${fT}<button class="btn-firma no-print" data-firma="tesorero">${t('ndf.signTrez')}</button></td>
-        <td class="cell-firma">${fM}<button class="btn-firma no-print" data-firma="membre">${t('ndf.signMembre')}</button></td>
+        <td class="cell-firma">${fT}${quitarT}<button class="btn-firma no-print" data-firma="tesorero">${t('ndf.signTrez')}</button></td>
+        <td class="cell-firma"></td>
       </tr>
       <tr class="pj"><td colspan="2">Les factures au nom de l'asso/de la section en pièces-jointes</td></tr>
     </tbody></table>`;
@@ -727,12 +903,8 @@ function htmlSign(d) {
 
 function paginarHoja(d) {
   const hoja = $('#hoja-ndf'); hoja.innerHTML = '';
-  const barra = document.createElement('div');
-  barra.className = 'ndf-toolbar no-print';
-  barra.innerHTML = `<button class="btn-add-ligne" id="btn-add-ligne">${t('ndf.addLine')}</button>`;
-  hoja.appendChild(barra);
 
-  let pagina, tabla, tbody, avail = 0;
+  let pagina, tabla, tbody, avail = 0, primeraTabla = null;
   function calcAvail() {
     const cs = getComputedStyle(pagina);
     // Altura útil real de la página A4 (independiente del cálculo en mm).
@@ -743,23 +915,33 @@ function paginarHoja(d) {
     calcAvail();
     if (conCab) { const h = document.createElement('div'); h.innerHTML = htmlHeader() + htmlMeta(d); pagina.appendChild(h); }
   }
-  function nuevaTabla(primera) { tabla = document.createElement('table'); tabla.className = 'ndf-tabla'; tabla.innerHTML = htmlColgroup() + htmlThead(primera) + '<tbody></tbody>'; pagina.appendChild(tabla); tbody = tabla.querySelector('tbody'); }
+  function nuevaTabla(primera) { tabla = document.createElement('table'); tabla.className = 'ndf-tabla'; tabla.innerHTML = htmlColgroup() + htmlThead(primera) + '<tbody></tbody>'; pagina.appendChild(tabla); tbody = tabla.querySelector('tbody'); if (primera) primeraTabla = tabla; }
   function usado() { let h = 0; for (const c of pagina.children) if (!c.classList.contains('ndf-bar')) h += c.offsetHeight; return h; }
   // Margen de seguridad: nada debe quedar pegado al borde inferior.
   const cabe = (reserva = 0) => usado() + reserva <= avail - 18;
 
-  // Mide la altura del bloque de firmas (fuera de pantalla) para reservarla.
+  // Mide la altura real del bloque de firmas para reservarla. IMPORTANTE: el temp
+  // se inserta DENTRO de #hoja-ndf con la clase .ndf-page para que apliquen las reglas
+  // `#hoja-ndf .ndf-sign…` (alto fijo 28mm de la fila de firma, bordes, fuente). Si se
+  // mide fuera de #hoja-ndf, esas reglas no aplican y la reserva queda infraestimada.
   function altoFirmas() {
     const tmp = document.createElement('div');
-    tmp.style.cssText = 'position:absolute;visibility:hidden;width:176mm';
-    tmp.innerHTML = `<div class="ndf-page" style="height:auto;box-shadow:none;border:0">${htmlSign(d)}</div>`;
-    document.body.appendChild(tmp);
-    const h = tmp.querySelector('.ndf-sign').offsetHeight + 12;
+    tmp.className = 'ndf-page';
+    tmp.style.cssText = 'position:absolute; left:-9999px; top:0; visibility:hidden; height:auto; box-shadow:none; border:0;';
+    tmp.innerHTML = htmlSign(d);
+    hoja.appendChild(tmp);
+    const el = tmp.querySelector('.ndf-sign');
+    const h = (el ? el.offsetHeight : 0) + 12;
     tmp.remove();
     return h;
   }
 
-  nuevaPagina(true); nuevaTabla(true);
+  nuevaPagina(true);
+  // Si la hoja está oculta (clientHeight≈0), `avail` sale ≤0 y `cabe()` sería siempre
+  // falso → se generarían páginas basura (una fila por página). No paginamos hasta que
+  // sea visible: mostrarVista('ndf') vuelve a paginar al mostrar la pestaña.
+  if (avail <= 0) { hoja.innerHTML = ''; return; }
+  nuevaTabla(true);
   const reservaFirmas = altoFirmas();
 
   const lignes = d.lignes || [];
@@ -775,10 +957,22 @@ function paginarHoja(d) {
   if (!cabe()) { pagina.lastElementChild.remove(); nuevaPagina(false); pagina.insertAdjacentHTML('beforeend', htmlSign(d)); }
 
   conectarHoja(d);
+  alinearComplementos(primeraTabla);
+}
+
+// Alinea el aside (botón "Ajouter une ligne" + leyenda) con el borde superior de la
+// tabla de conceptos, para que quede justo al lado de la tabla y no arriba del todo.
+function alinearComplementos(tabla) {
+  const aside = $('.ndf-aside'); const wrap = $('.ndf-hoja-wrap');
+  if (!aside || !wrap) return;
+  if (!tabla) { aside.style.marginTop = '0px'; return; }
+  const off = tabla.getBoundingClientRect().top - wrap.getBoundingClientRect().top;
+  aside.style.marginTop = Math.max(0, off) + 'px';
 }
 
 function conectarHoja(d) {
   $$('#hoja-ndf input[data-campo]').forEach((inp) => {
+    if (inp.dataset.campo === 'date_emission') soloPermitidos(inp, /[0-9/]/);
     inp.addEventListener('input', () => {
       d[inp.dataset.campo] = inp.value;
       if (inp.dataset.campo === 'nom_membre') comprobarNom(inp.value);
@@ -786,9 +980,8 @@ function conectarHoja(d) {
       autoguardarDatos();
     });
   });
-  const btnAdd = $('#btn-add-ligne');
-  if (btnAdd) btnAdd.addEventListener('click', () => { (d.lignes ||= []).push({ article: '', date_achat: '', prix_ht: 0, taux_tva: '0%', montant_ttc: 0, fichier_source: '', confiance: 'haute' }); paginarHoja(d); autoguardarDatos(); });
-  $$('#hoja-ndf .btn-firma').forEach((b) => b.addEventListener('click', () => elegirFirma(b.dataset.firma)));
+  $$('#hoja-ndf .btn-firma').forEach((b) => b.addEventListener('click', () => elegirFirma()));
+  $$('#hoja-ndf .btn-firma-quitar').forEach((b) => b.addEventListener('click', () => quitarFirma()));
   conectarLignes(d);
   comprobarNom(d.nom_membre || '');
 }
@@ -796,9 +989,12 @@ function conectarLignes(d) {
   $$('#hoja-ndf .ndf-tabla tbody tr[data-i]').forEach((tr) => {
     const i = Number(tr.dataset.i); if (Number.isNaN(i)) return;
     tr.querySelectorAll('[data-l]').forEach((el) => {
+      const campo = el.dataset.l;
+      if (campo === 'prix_ht' || campo === 'taux_tva') soloPermitidos(el, /[0-9.,]/);
+      if (campo === 'date_achat') soloPermitidos(el, /[0-9/]/);
       el.addEventListener('input', () => {
-        const campo = el.dataset.l; const val = el.isContentEditable ? el.textContent : el.value;
-        d.lignes[i][campo] = campo === 'prix_ht' ? aNumero(val) : val;
+        const val = el.isContentEditable ? el.textContent : el.value;
+        d.lignes[i][campo] = (campo === 'prix_ht' || campo === 'taux_tva') ? aNumero(val) : val;
         if (campo === 'prix_ht' || campo === 'taux_tva') { actualizarTotales(d); pintarBudget(); }
         autoguardarDatos();
       });
@@ -823,22 +1019,96 @@ function comprobarNom(valor) {
 }
 
 // ============================================================
-//  FIRMAS (tesorero / miembro)
+//  NDF SIGNÉE (adjuntar la nota firmada → _signee en la carpeta)
 // ============================================================
-let firmaDestino = 'tesorero';
+function renderSignee() {
+  const cont = $('#signee-cont'); if (!cont) return;
+  const a = estado.activo;
+  if (!a) { cont.innerHTML = ''; return; }
+  const f = a.signee;
+  if (!f) {
+    cont.innerHTML = `<p class="vacio">${escapar(t('signee.none'))}</p>`;
+    return;
+  }
+  const url = `/api/eventos/${a.id}/signee?t=${Date.now()}`;
+  const preview = esImagen(f) ? `<img src="${url}" alt="${escapar(f)}" />` : `<iframe src="${url}" title="${escapar(f)}"></iframe>`;
+  cont.innerHTML = `
+    <div class="signee-actual">
+      <div class="signee-head">
+        <span class="signee-nom">${escapar(f)}</span>
+        <div class="barra-acciones">
+          <a class="sec peque" href="${url}" download="${escapar(f)}">${t('signee.download')}</a>
+          <button class="sec peque" id="btn-carpeta-signee">${t('docs.openFolder')}</button>
+          <button class="sec peque" id="btn-replace-signee">${t('signee.replace')}</button>
+          <button class="peligro peque" id="btn-del-signee">${t('signee.delete')}</button>
+        </div>
+      </div>
+      <div class="signee-preview">${preview}</div>
+    </div>`;
+  cont.querySelector('#btn-carpeta-signee').addEventListener('click', async () => {
+    try { await api(`/eventos/${a.id}/signee/abrir-carpeta`, { method: 'POST' }); }
+    catch (e) { toast(e.message, true); }
+  });
+  cont.querySelector('#btn-replace-signee').addEventListener('click', () => $('#signee-input').click());
+  cont.querySelector('#btn-del-signee').addEventListener('click', async () => {
+    if (!confirm(t('signee.confirmDel'))) return;
+    await api(`/eventos/${a.id}/signee`, { method: 'DELETE' });
+    await recargarActivo(); renderSignee(); toast(t('signee.deleted'));
+  });
+}
+async function subirSignee(file) {
+  if (!estado.activo || !file) return;
+  const ext = (file.name.split('.').pop() || '').toLowerCase();
+  if (!['pdf', 'jpg', 'jpeg', 'png'].includes(ext)) { toast(t('signee.badType'), true); return; }
+  try {
+    const contenidoBase64 = await leerArchivoBase64(file);
+    await api(`/eventos/${estado.activo.id}/signee`, { method: 'POST', body: JSON.stringify({ nombre: file.name, contenidoBase64 }) });
+    await recargarActivo(); renderSignee(); toast(t('signee.saved'));
+  } catch (e) { toast('Erreur : ' + e.message, true); }
+  $('#signee-input').value = '';
+}
+$('#btn-add-signee').addEventListener('click', () => $('#signee-input').click());
+$('#signee-input').addEventListener('change', () => subirSignee($('#signee-input').files[0]));
+{
+  const z = $('#signee-cont');
+  z.addEventListener('dragover', (e) => { e.preventDefault(); z.classList.add('dragover'); });
+  z.addEventListener('dragleave', (e) => { if (!z.contains(e.relatedTarget)) z.classList.remove('dragover'); });
+  z.addEventListener('drop', (e) => { e.preventDefault(); z.classList.remove('dragover'); subirSignee(e.dataTransfer.files[0]); });
+}
+
+// ============================================================
+//  FIRMAS (tesorero / asso mère)
+// ============================================================
 const firmaFile = $('#firma-file');
-async function elegirFirma(destino) {
-  firmaDestino = destino;
-  $('#firma-titulo').textContent = destino === 'membre' ? t('sign.titleMembre') : t('sign.titleTrez');
+const esFirmaTrez = (n) => /^Signature_Trez_BDI_/i.test(n);
+async function elegirFirma(reload) {
+  $('#firma-titulo').textContent = t('sign.titleTrez');
   let firmas = [];
   try { firmas = await api('/firmas'); } catch {}
-  if (!firmas.length) { firmaFile.click(); return; }
+  // Solo firmas del tesorero de l'asso mère (Signature_Trez_BDI_*).
+  firmas = firmas.filter((n) => esFirmaTrez(n));
+  // Sin firmas: al abrir, ir directo a importar; al recargar (tras borrar), dejar el modal vacío.
+  if (!firmas.length && !reload) { firmaFile.click(); return; }
   const cont = $('#firma-cards'); cont.innerHTML = '';
+  if (!firmas.length) { cont.innerHTML = `<p class="vacio">${escapar(t('sign.none'))}</p>`; }
   for (const nom of firmas) {
     const card = document.createElement('div');
     card.className = 'doc-card firma-card';
-    card.innerHTML = `<div class="thumb"><img src="/api/firmas/${encodeURIComponent(nom)}" alt="${escapar(nom)}" /></div><div class="pie"><div class="nombre">${escapar(nom)}</div></div>`;
-    card.addEventListener('click', () => aplicarFirma(nom));
+    card.innerHTML = `<button class="btn-firma-del peligro peque no-print" title="${t('sign.del')}">✕</button>
+      <div class="thumb"><img src="/api/firmas/${encodeURIComponent(nom)}" alt="${escapar(nom)}" /></div>
+      <div class="pie"><div class="nombre">${escapar(nom)}</div></div>`;
+    card.addEventListener('click', (e) => { if (e.target.closest('.btn-firma-del')) return; aplicarFirma(nom); });
+    card.querySelector('.btn-firma-del').addEventListener('click', async (e) => {
+      e.stopPropagation();
+      if (!confirm(t('sign.confirmDel', { x: nom }))) return;
+      try {
+        await api('/firmas/' + encodeURIComponent(nom), { method: 'DELETE' });
+        const d = datos();
+        if (d && d.signature === nom) { d.signature = ''; paginarHoja(d); autoguardarDatos(); }
+        toast(t('sign.deleted'));
+        elegirFirma(true);   // recarga la lista del modal (sin abrir importador si queda vacía)
+      } catch (err) { toast('Erreur : ' + err.message, true); }
+    });
     cont.appendChild(card);
   }
   $('#modal-firma').classList.add('show');
@@ -849,14 +1119,27 @@ $('#modal-firma').addEventListener('click', (e) => { if (e.target.id === 'modal-
 $('#firma-importar').addEventListener('click', () => firmaFile.click());
 firmaFile.addEventListener('change', async () => {
   const file = firmaFile.files[0]; if (!file) return;
-  try { const contenidoBase64 = await leerArchivoBase64(file); const r = await api('/firmas', { method: 'POST', body: JSON.stringify({ nombre: file.name, contenidoBase64 }) }); aplicarFirma(r.nombre); }
-  catch (e) { toast('Erreur : ' + e.message, true); }
+  try {
+    const contenidoBase64 = await leerArchivoBase64(file);
+    const cuerpo = { nombre: file.name, contenidoBase64 };
+    // Firma del tesorero de l'asso mère: se guarda como Signature_Trez_BDI_<nombre>.
+    const nom = prompt(t('sign.askTrezName'));
+    if (!nom || !nom.trim()) { firmaFile.value = ''; return; }
+    cuerpo.nombreDestino = `Signature_Trez_BDI_${slugNombre(nom)}`;
+    const r = await api('/firmas', { method: 'POST', body: JSON.stringify(cuerpo) });
+    aplicarFirma(r.nombre);
+  } catch (e) { toast('Erreur : ' + e.message, true); }
   firmaFile.value = '';
 });
 function aplicarFirma(nom) {
   const d = datos(); if (!d) return;
-  if (firmaDestino === 'membre') d.signature_membre = nom; else d.signature = nom;
+  d.signature = nom;
   cerrarFirma(); paginarHoja(d); autoguardarDatos(); toast(t('sign.set'));
+}
+function quitarFirma() {
+  const d = datos(); if (!d) return;
+  d.signature = '';
+  paginarHoja(d); autoguardarDatos(); toast(t('sign.removed'));
 }
 
 // ============================================================
@@ -877,24 +1160,42 @@ async function generarPDF() {
   const btn = $('#btn-pdf'); btn.disabled = true; btn.textContent = t('ndf.pdfGen');
   const hoja = $('#hoja-ndf');
   try {
+    // La hoja debe estar visible y paginada para que html2canvas mida bien.
+    if (!$('#vista-ndf').classList.contains('activa')) mostrarVista('ndf');
+    paginarHoja(d);
+    await document.fonts.ready;
+    // Espera a que las imágenes de la hoja (logo, firmas) estén decodificadas.
+    await Promise.all($$('#hoja-ndf img').map((img) => img.complete ? Promise.resolve() : (img.decode ? img.decode().catch(() => {}) : Promise.resolve())));
     hoja.classList.add('exportando'); // oculta ayudas visuales en el PDF
     const pages = $$('#hoja-ndf .ndf-page');
+    if (!pages.length) throw new Error(t('ndf.pdfNoPages'));
     const imgs = [];
     for (const p of pages) {
-      const canvas = await html2canvas(p, { scale: 2, backgroundColor: '#ffffff', useCORS: true, logging: false });
+      const canvas = await html2canvas(p, {
+        scale: 2, backgroundColor: '#ffffff', useCORS: true, logging: false,
+        width: p.offsetWidth, height: p.offsetHeight,
+        windowWidth: document.documentElement.scrollWidth,
+        windowHeight: document.documentElement.scrollHeight,
+        scrollX: 0, scrollY: 0,
+      });
+      if (canvas.width < 50 || canvas.height < 50) throw new Error(t('ndf.pdfBlank'));
       imgs.push(canvas.toDataURL('image/png'));
     }
     hoja.classList.remove('exportando');
+    if (!imgs.length) throw new Error(t('ndf.pdfNoPages'));
     const resp = await fetch(`/api/eventos/${estado.activo.id}/pdf`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ paginas: imgs, orden: d.ordre_pieces || [] }),
     });
     if (!resp.ok) throw new Error('PDF ' + resp.status);
+    // Descarga directa (sin previsualización).
     const blob = await resp.blob();
     const url = URL.createObjectURL(blob);
-    $('#doc-titulo').textContent = (d.numero_ndf || 'Note de Frais') + '.pdf';
-    $('#doc-visor').innerHTML = `<iframe src="${url}"></iframe>`;
-    $('#modal-doc').classList.add('show');
+    const a = document.createElement('a');
+    a.href = url; a.download = (d.numero_ndf || 'Note_de_Frais') + '.pdf';
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 4000);
+    toast(t('ndf.pdfOk'));
   } catch (e) { toast('Erreur : ' + e.message, true); }
   finally { hoja.classList.remove('exportando'); btn.disabled = false; btn.textContent = t('ndf.pdf'); }
 }
@@ -902,42 +1203,50 @@ async function generarPDF() {
 $('#btn-excel').addEventListener('click', exportarExcel);
 function exportarExcel() {
   const d = datos(); if (!d) return;
-  const filas = (d.lignes || []).map((l) =>
-    `<tr><td>${escapar(l.article)}</td><td>${escapar(l.date_achat)}</td><td>${numFR(l.prix_ht)}</td><td>${escapar(l.taux_tva)}</td><td>${numFR((Number(l.prix_ht) || 0) * (1 + tasaTVA(l.taux_tva)))}</td></tr>`
-  ).join('');
   let ht = 0, ttc = 0;
-  for (const l of d.lignes || []) { const h = Number(l.prix_ht) || 0; ht += h; ttc += h * (1 + tasaTVA(l.taux_tva)); }
-  const html = `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel"><head><meta charset="UTF-8"></head><body>
-    <table border="1">
-      <tr><th>NDF</th><td>${escapar(d.numero_ndf)}</td></tr>
-      <tr><th>Membre</th><td>${escapar(d.nom_membre)}</td></tr>
-      <tr><th>Section</th><td>${escapar(d.section)}</td></tr>
-      <tr><th>Date</th><td>${escapar(d.date_emission)}</td></tr>
-    </table><br/>
-    <table border="1">
-      <tr><th>Article</th><th>Date</th><th>Prix HT</th><th>Taux TVA</th><th>Montant TTC</th></tr>
-      ${filas}
-      <tr><th colspan="2">Total HT</th><td>${numFR(ht)}</td><th>Total TTC</th><td>${numFR(ttc)}</td></tr>
-    </table></body></html>`;
-  const blob = new Blob(['﻿', html], { type: 'application/vnd.ms-excel' });
+  // Hoja como matriz de filas (string | number por celda).
+  const rows = [
+    ['NDF', d.numero_ndf || ''],
+    ['Membre', d.nom_membre || ''],
+    ['Section', d.section || ''],
+    ['Date', d.date_emission || ''],
+    [],
+    ['Article', 'Date', 'Prix HT (€)', 'Taux TVA (%)', 'Montant TTC (€)'],
+  ];
+  for (const l of d.lignes || []) {
+    const h = Number(l.prix_ht) || 0;
+    const m = h * (1 + tasaTVA(l.taux_tva));
+    ht += h; ttc += m;
+    rows.push([l.article || '', l.date_achat || '', round2(h), tvaNum(l.taux_tva), round2(m)]);
+  }
+  rows.push([]);
+  rows.push(['Total HT (€)', round2(ht), '', 'Total TTC (€)', round2(ttc)]);
+  const blob = MiniXLSX.toBlob(rows, 'Note de Frais');
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
-  a.download = `${d.numero_ndf || 'NoteDeFrais'}.xls`;
+  a.download = `${d.numero_ndf || 'NoteDeFrais'}.xlsx`;
   a.click();
   URL.revokeObjectURL(a.href);
 }
+function round2(n) { return Math.round((Number(n) || 0) * 100) / 100; }
 
 // ============================================================
 //  "How to use"
 // ============================================================
-function abrirAyuda(clave) {
-  const a = (AYUDA[IDIOMA] && AYUDA[IDIOMA][clave]) || AYUDA.fr[clave]; if (!a) return;
-  $('#howto-titulo').textContent = t('howto.prefix') + a.titulo;
-  $('#howto-cuerpo').innerHTML = a.cuerpo;
+// Un único modal con TODAS las secciones (orden lógico de uso).
+const HOWTO_ORDEN = ['eventos', 'personnes', 'documents', 'analyse', 'ndf', 'signee'];
+function abrirAyudaGlobal() {
+  const tabla = AYUDA[IDIOMA] || AYUDA.fr;
+  $('#howto-titulo').textContent = t('howto.allTitle');
+  $('#howto-cuerpo').innerHTML = HOWTO_ORDEN
+    .map((k) => tabla[k] || AYUDA.fr[k])
+    .filter(Boolean)
+    .map((a) => `<section class="howto-sec"><h3>${escapar(a.titulo)}</h3>${a.cuerpo}</section>`)
+    .join('');
   $('#modal-howto').classList.add('show');
 }
 function cerrarAyuda() { $('#modal-howto').classList.remove('show'); }
-$$('.btn-howto').forEach((b) => b.addEventListener('click', () => abrirAyuda(b.dataset.howto)));
+$('#btn-howto-global').addEventListener('click', abrirAyudaGlobal);
 $('#howto-cerrar').addEventListener('click', cerrarAyuda);
 $('#modal-howto').addEventListener('click', (e) => { if (e.target.id === 'modal-howto') cerrarAyuda(); });
 
@@ -987,6 +1296,7 @@ async function aplicarHash() {
 
 // ---------- Arranque ----------
 aplicarIdioma();
+renderChipsEstado();
 cargarPersonas().finally(() => {
   cargarEventos().then(aplicarHash).catch((e) => toast('Erreur : ' + e.message, true));
 });

@@ -25,7 +25,7 @@
         <span id="estado-servidor" class="estado-servidor desconectado">
           <span class="punto"></span><span class="txt" data-i18n="server.connecting">Connexion…</span>
         </span>
-        <button class="sec" id="btn-personnes">👤 <span data-i18n="tabs.personnes">Personnes</span></button>
+        <button class="sec" id="btn-howto-global"><span data-i18n="howto.btn">❔ How to use</span></button>
         <select id="sel-idioma" class="sel-idioma" title="Language">
           <option value="fr">🇫🇷 FR</option>
           <option value="es">🇪🇸 ES</option>
@@ -35,11 +35,16 @@
       </div>
     </header>
 
-    <nav class="tabs" id="tabs" style="display:none">
-      <button id="btn-volver" class="tab-volver" data-i18n="tabs.back">← Événements</button>
+    <nav class="tabs tabs-home" id="tabs-home">
+      <button data-home="personnes" data-i18n="tabs.personnes">Personnes</button>
+      <button data-home="eventos" class="activa"><span class="ico-volver" title="">↩</span> <span data-i18n="tabs.events">Événements</span></button>
+    </nav>
+
+    <nav class="tabs tabs-sub" id="tabs" style="display:none">
       <button data-vista="documents" class="activa" data-i18n="tabs.documents">Documents</button>
       <button data-vista="analyse" data-i18n="tabs.analyse">Analyse</button>
       <button data-vista="ndf" data-i18n="tabs.ndf">Note de Frais</button>
+      <button data-vista="signee" data-i18n="tabs.signee">Signée</button>
     </nav>
   </div>
 
@@ -49,19 +54,11 @@
       <div class="panel">
         <div class="panel-head">
           <h2 data-i18n="home.title">Événements</h2>
-          <button class="btn-howto" data-howto="eventos"><span data-i18n="howto.btn">❔ How to use</span></button>
         </div>
         <div class="fila barra-busqueda">
           <input id="buscar" class="buscar" data-i18n-ph="home.search" placeholder="🔎 Rechercher…" />
-          <select id="filtro-estado" class="filtro-estado">
-            <option value="" data-i18n="home.allStates">Tous les états</option>
-            <option value="brouillon" data-i18n="estado.brouillon">Brouillon</option>
-            <option value="a_verifier" data-i18n="estado.a_verifier">À vérifier</option>
-            <option value="valide" data-i18n="estado.valide">Validé</option>
-            <option value="envoye" data-i18n="estado.envoye">Envoyé</option>
-            <option value="rembourse" data-i18n="estado.rembourse">Remboursé</option>
-          </select>
         </div>
+        <div id="chips-estado" class="chips-estado"></div>
         <div id="grid-eventos" class="grid-anios"></div>
       </div>
     </section>
@@ -75,9 +72,7 @@
             <p class="muted" style="margin:4px 0 0" data-i18n="personnes.sub">Personnes qui avancent les dépenses et leurs coordonnées bancaires (RIB).</p>
           </div>
           <div class="barra-acciones">
-            <button id="btn-volver-perso" class="sec" data-i18n="tabs.back">← Événements</button>
             <button id="btn-add-personne" data-i18n="personnes.add">+ Ajouter une personne</button>
-            <button class="btn-howto" data-howto="personnes"><span data-i18n="howto.btn">❔ How to use</span></button>
           </div>
         </div>
         <div id="personnes-lista"></div>
@@ -86,15 +81,43 @@
 
     <!-- ============ DOCUMENTS ============ -->
     <section class="vista" id="vista-documents">
+      <!-- Tarjeta de info del evento (editable, autoguardado) -->
       <div class="panel">
         <div class="panel-head">
           <div>
-            <h2 style="margin:0" data-i18n="docs.title">Documents</h2>
-            <p class="muted" style="margin:4px 0 0" data-i18n="docs.sub">Glisse tes pièces : l'analyse se lance automatiquement.</p>
+            <h2 style="margin:0" data-i18n="docs.eventInfo">Informations de l'événement</h2>
+            <p class="muted" style="margin:4px 0 0" data-i18n="docs.eventInfoSub">Modifie ces champs : tout est enregistré et reporté automatiquement.</p>
           </div>
-          <div class="barra-acciones">
-            <span id="estado-analisis" class="muted"></span>
-            <button class="btn-howto" data-howto="documents"><span data-i18n="howto.btn">❔ How to use</span></button>
+          <span class="muted autosave-ind" id="info-autosave"></span>
+        </div>
+        <div class="info-grid">
+          <div class="campo">
+            <label data-i18n="form.name">Nom de l'événement</label>
+            <input id="info-nom" data-i18n-ph="form.namePh" placeholder="ex : World Week 2026" />
+          </div>
+          <div class="campo">
+            <label data-i18n="form.section">Section (pôle)</label>
+            <select id="info-section">
+              <option>Pôle Events</option>
+              <option>Pôle RelEnt</option>
+              <option>Pôle Trez</option>
+              <option>Pôle Soirée</option>
+              <option>Pôle Comm</option>
+              <option>Pôle Cohez</option>
+            </select>
+          </div>
+          <div class="campo">
+            <label data-i18n="form.date">Date de l'événement</label>
+            <input type="date" id="info-date" />
+          </div>
+          <div class="campo">
+            <label data-i18n="form.budget">Budget max alloué par le BDI (€)</label>
+            <input id="info-budget" type="number" min="0" step="0.01" data-i18n-ph="form.budgetPh" placeholder="ex : 300" />
+          </div>
+          <div class="campo campo-ancho">
+            <label data-i18n="form.member">Membre ayant engagé les dépenses</label>
+            <select id="info-membre-sel"><option value="" data-i18n="form.choosePerson">— Choisir une personne —</option></select>
+            <div id="info-iban-preview" class="muted" style="margin-top:4px"></div>
           </div>
         </div>
       </div>
@@ -102,7 +125,10 @@
       <div class="panel">
         <div class="panel-head">
           <h3 style="margin:0"><span data-i18n="docs.list">Documents</span> (<span id="n-docs">0</span>)</h3>
-          <button class="sec" id="btn-add-docs" data-i18n="docs.add">+ Ajouter des documents</button>
+          <div class="barra-acciones">
+            <span id="estado-analisis" class="muted"></span>
+            <button class="sec" id="btn-add-docs" data-i18n="docs.add">+ Ajouter des documents</button>
+          </div>
           <input type="file" id="file-input" multiple accept=".pdf,.jpg,.jpeg,.png,.webp,.gif" style="display:none" />
         </div>
         <div id="doc-cards" class="doc-cards dropzone-cards"></div>
@@ -119,7 +145,6 @@
           </div>
           <div class="barra-acciones">
             <button id="btn-regenerar" data-i18n="analyse.regen">↻ Régénérer la note</button>
-            <button class="btn-howto" data-howto="analyse"><span data-i18n="howto.btn">❔ How to use</span></button>
           </div>
         </div>
         <div id="estado-regen" class="muted" style="margin-top:8px"></div>
@@ -136,8 +161,7 @@
       <div id="ndf-contenido" style="display:none">
         <div class="panel no-print">
           <div class="panel-head">
-            <h2 style="margin:0"><span data-i18n="ndf.title">Vérification &amp; édition</span>
-              <button class="btn-howto" data-howto="ndf"><span data-i18n="howto.btn">❔ How to use</span></button></h2>
+            <h2 style="margin:0"><span data-i18n="ndf.title">Vérification &amp; édition</span></h2>
             <div class="barra-acciones">
               <span class="muted autosave-ind" id="autosave-ind"></span>
               <button class="sec" id="btn-excel" data-i18n="ndf.excel">⬇ Excel</button>
@@ -160,7 +184,6 @@
                     <option value="rembourse" data-i18n="estado.rembourse">Remboursé</option>
                   </select>
                 </label>
-                <button id="btn-paye" class="toggle-paye">Non payé</button>
               </div>
               <div id="budget-info" class="budget-info"></div>
               <div id="aviso-orphelins" class="aviso-orphelins" style="display:none"></div>
@@ -180,19 +203,39 @@
             </div>
           </div>
 
-          <!-- Columna derecha: leyenda + preview -->
+          <!-- Columna derecha: preview + aside (botón "Ajouter une ligne" + leyenda) -->
           <div class="ndf-col-der">
-            <div class="panel no-print legende">
-              <b data-i18n="ndf.legendTitle">Code couleur des lignes (fiabilité de l'IA)</b>
-              <ul>
-                <li><span class="leg-box haute"></span> <span data-i18n="ndf.confHaute">Confiance élevée</span></li>
-                <li><span class="leg-box moyenne"></span> <span data-i18n="ndf.confMoyenne">Confiance moyenne — à vérifier</span></li>
-                <li><span class="leg-box basse"></span> <span data-i18n="ndf.confBasse">Confiance faible — à vérifier absolument</span></li>
-              </ul>
-            </div>
             <div class="ndf-hoja-wrap"><div id="hoja-ndf"></div></div>
+            <div class="ndf-aside no-print">
+              <button id="btn-add-ligne" class="btn-add-ligne" data-i18n="ndf.addLine">+ Ajouter une ligne</button>
+              <div class="panel legende">
+                <b data-i18n="ndf.legendTitle">Code couleur des lignes (fiabilité de l'IA)</b>
+                <ul>
+                  <li><span class="leg-box haute"></span> <span data-i18n="ndf.confHaute">Confiance élevée</span></li>
+                  <li><span class="leg-box moyenne"></span> <span data-i18n="ndf.confMoyenne">Confiance moyenne — à vérifier</span></li>
+                  <li><span class="leg-box basse"></span> <span data-i18n="ndf.confBasse">Confiance faible — à vérifier absolument</span></li>
+                </ul>
+              </div>
+            </div>
           </div>
         </div>
+      </div>
+    </section>
+
+    <!-- ============ NDF SIGNÉE (adjuntar la nota firmada) ============ -->
+    <section class="vista" id="vista-signee">
+      <div class="panel">
+        <div class="panel-head">
+          <div>
+            <h2 style="margin:0" data-i18n="signee.title">Note de Frais signée</h2>
+            <p class="muted" style="margin:4px 0 0" data-i18n="signee.sub">Joins la Note de Frais signée par le membre. Elle est enregistrée dans le dossier de l'événement avec le suffixe « _signee ».</p>
+          </div>
+          <div class="barra-acciones">
+            <button class="sec" id="btn-add-signee" data-i18n="signee.add">+ Joindre la NDF signée</button>
+            <input type="file" id="signee-input" accept=".pdf,.jpg,.jpeg,.png" style="display:none" />
+          </div>
+        </div>
+        <div id="signee-cont" class="signee-cont dropzone-signee"></div>
       </div>
     </section>
   </main>
@@ -254,6 +297,15 @@
           <div id="membre-iban-preview" class="muted" style="margin-top:4px"></div>
         </div>
       </div>
+      <div class="campo" style="margin-top:12px">
+        <label data-i18n="form.docs">Documents (factures, tickets, attestations)</label>
+        <p class="muted" style="margin:2px 0 6px" data-i18n="form.docsHint">Optionnel : joins-les ici, l'analyse se lancera automatiquement après la création.</p>
+        <div id="crear-dropzone" class="dropzone-crear">
+          <button class="sec" id="crear-add-docs" type="button" data-i18n="docs.add">+ Ajouter des documents</button>
+          <input type="file" id="crear-file-input" multiple accept=".pdf,.jpg,.jpeg,.png,.webp,.gif" style="display:none" />
+          <div id="crear-docs-lista" class="crear-docs-lista"></div>
+        </div>
+      </div>
       <div class="modal-error" id="crear-error"></div>
       <div style="text-align:right; margin-top:16px">
         <button id="btn-crear" data-i18n="form.create">Créer</button>
@@ -274,6 +326,16 @@
       </div>
       <div class="fila">
         <div class="campo"><label data-i18n="person.titulaire">Titulaire du compte</label><input id="p-titulaire" /></div>
+        <div class="campo"><label data-i18n="person.role">Rôle dans son club</label>
+          <select id="p-role">
+            <option value="prez" data-i18n="role.prez">Président</option>
+            <option value="trez" data-i18n="role.trez">Trésorier</option>
+            <option value="vice_trez" data-i18n="role.vice_trez">Vice-trésorier</option>
+            <option value="membre" selected data-i18n="role.membre">Membre</option>
+            <option value="externe" data-i18n="role.externe">Externe</option>
+            <option value="autre" data-i18n="role.autre">Autre</option>
+          </select>
+        </div>
       </div>
       <div class="fila" style="margin-top:10px">
         <div class="campo"><label data-i18n="person.iban">IBAN</label><input id="p-iban" /></div>
@@ -318,7 +380,7 @@
   </div>
 
   <!-- Modal: How to use -->
-  <div id="modal-howto" class="modal no-print">
+  <div id="modal-howto" class="modal modal-howto-grande no-print">
     <div class="modal-caja">
       <button class="modal-cerrar" id="howto-cerrar" title="Fermer">✕</button>
       <h2 id="howto-titulo"></h2>
@@ -335,6 +397,7 @@
     </div>
   </div>
 
+  <script src="vendor/xlsx-min.js"></script>
   <script src="i18n.js"></script>
   <script src="app.js"></script>
 </body>

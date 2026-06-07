@@ -27,6 +27,7 @@ the folder.
   - [3. Documents (automatic analysis)](#3-documents--automatic-analysis)
   - [4. Analysis (review the OCR)](#4-analysis--review-what-the-ai-read)
   - [5. Expense report & final PDF](#5-expense-report--final-pdf)
+  - [6. Attach the signed report](#6-attach-the-signed-report)
 - [Feature reference](#feature-reference)
 - [Keyboard shortcuts](#keyboard-shortcuts)
 - [Project structure](#project-structure)
@@ -96,8 +97,9 @@ fills in the report. One API, one key.
 ### 1. People database (RIB / IBAN)
 
 The people who advance the money (usually the president or the treasurer) live in a **People
-database**. Open it from the **« Personnes »** button in the top bar. Each person stores the bank
-details found on a *RIB*: account holder, **IBAN**, BIC/SWIFT, bank, branch.
+database**. It is the **first tab (« Personnes »)** in the top bar, always visible next to
+**« Événements »**. Each person stores the bank details found on a *RIB*: account holder, **IBAN**,
+BIC/SWIFT, bank, branch.
 
 Add a person two ways:
 - From the **People** tab → **« + Add a person »**.
@@ -119,14 +121,19 @@ page) and fill in:
 | **Date** | Used for the report number's year. |
 | **Max budget** | The maximum the BDI allocated to this event (shown on the card and as "remaining budget"). |
 | **Member who paid** | A **dropdown** connected to the People database (their IBAN is attached automatically). |
+| **Documents** *(optional)* | A **drag-and-drop zone** to attach the proofs right away; after the event is created they upload and **analysis starts automatically**. |
 
-On the home page, events are **grouped by year**, each card is **colour-coded by status**, shows the
-**budget** and a **paid / unpaid** badge. A **search bar** and **status filter** help when there are
-many.
+On the home page, events are **grouped by year**, each card is **colour-coded by status** and shows the
+**budget**. A **search bar** and **status chips** (multi-select) help when there are many; the
+**Remboursé** status is what indicates an event has been paid.
 
 ### 3. Documents (automatic analysis)
 
-Drag-and-drop your invoices, receipts and attestations **onto the cards area** (or use
+The first card on this tab is the **editable event info** (name, section/pôle, date, budget, member).
+Changing any field **auto-saves** and is **reported automatically** onto the expense report (report
+number, section/asso, date, member name & IBAN).
+
+Below it, drag-and-drop your invoices, receipts and attestations **onto the cards area** (or use
 **« + Add documents »**). **Analysis starts automatically** — Claude reads each document, transcribes
 it and fills the report. While it works you see a loading indicator.
 
@@ -148,12 +155,13 @@ corrected text. Arrow keys ←/→ jump between documents; **« Open »** opens 
 A faithful, fully-editable preview of the official BDI report. The screen is split in two columns:
 
 - **Left column** (cards):
-  - **Status & budget** — event status dropdown, **paid / unpaid** toggle, **remaining budget**
-    (turns red if over budget), and an **orphan-documents** warning.
+  - **Status & budget** — event status dropdown (**Remboursé** = paid) and **remaining budget**
+    (turns red if over budget), plus an **orphan-documents** warning.
   - **AI observations** — the AI's notes as an editable numbered list (not printed on the report).
   - **Attachment order** — drag the cards to set the order the documents will follow the report in the
     final PDF.
-- **Right column**: a small **colour legend** and the **A4 preview** itself.
+- **Right column**: the **A4 preview** itself, with a small **aside** beside the table holding the
+  **« Ajouter une ligne »** button (on top) and the **colour legend** (below), aligned to the table.
 
 Key behaviours:
 - **Everything auto-saves** (no save button). The IBAN field is filled from the chosen person but stays
@@ -161,33 +169,47 @@ Key behaviours:
 - **Amounts are always in euros**, decimal comma; totals (HT / TTC) recompute live.
 - Each line has a **coloured border** showing the AI's **confidence** (green = high, amber = medium,
   red = low) so you know what to double-check — the legend explains it.
-- **Treasurer signature** and **Member signature** buttons drop a saved signature image into the
-  report; if none exists yet, your OS file picker opens.
+- **One signature only — the treasurer of the parent association.** The **« Signature trésorier »**
+  button drops a saved signature image into the report (if none exists yet, your OS file picker opens);
+  a small **✕** lets you **remove** it again. The member's signature column stays empty: the member
+  **signs the printed report by hand**, and you attach the signed version in the **Signée** tab (step 6).
 - If the table grows, the preview **flows onto several A4 pages**, and the signature block is never cut.
-- **« Add new line »** sits at the top-right of the table; the red ✕ removes a line.
+- The red ✕ on a line removes it.
 - A red warning appears below the name if the **surname isn't in UPPERCASE**.
 - **The IBAN is required** before you can generate the PDF.
 
 **« Generate PDF »** (or Ctrl+P) builds the **single final PDF** = the report (one or more A4 pages) +
-every attachment in your chosen order; it opens in the viewer and is saved in the event folder.
-**« Excel »** exports the lines to a spreadsheet.
+every attachment in your chosen order; it opens in the viewer and is saved in the event folder
+(`<report number>.pdf`). **« Excel »** exports the lines to a spreadsheet.
+
+### 6. Attach the signed report
+
+Once the member has physically signed the report, attach the signed version in the **« Signée »** tab
+(PDF or image — drag-and-drop or **« + Joindre la NDF signée »**). It is saved **next to the blank
+report** in the event folder with a **`_signee`** suffix. From there you can **download** it, **open the
+folder** (Windows Explorer), **replace** or **delete** it.
 
 ---
 
 ## Feature reference
 
 - **AI document reading & extraction** (Claude, no external OCR), with **per-line confidence**.
-- **People / RIB database** with **AI extraction from a RIB** and manual editing.
-- **Event states** (draft → to review → validated → sent → reimbursed) shown as card colours + a
-  **paid / unpaid** toggle.
+- **People / RIB database** (first tab) with **AI extraction from a RIB** and manual editing.
+- **Hierarchical tabs**: Personnes / Événements always visible; opening an event reveals its
+  Documents / Analyse / Note de Frais / Signée sub-tabs (the « Événements » tab shows a ↩ to go back).
+- **Editable event-info card** on the Documents tab that auto-saves and propagates to the report.
+- **Attach documents at creation** → they upload and get analysed automatically.
+- **Event states** (draft → to review → validated → sent → reimbursed) shown as card colours; the
+  **Remboursé** status indicates the event has been paid.
 - **Per-event budget** with live "remaining budget" / "over budget".
-- **Final concatenated PDF** (report + attachments) and **Excel export**.
+- **Final concatenated PDF** (report + attachments), the **signed report** kept as `_signee`, and
+  **Excel export**.
 - **Duplicate detection** (SHA-256) and **orphan-document** warnings.
-- **Two signatures** (treasurer & member) from a shared signatures folder.
+- **Treasurer signature** from a shared signatures folder, with **add / remove / delete saved** images.
 - **Automatic analysis**, **autosave**, **automatic backups** of each event's JSON.
-- **Multi-language UI** (FR/ES/EN), **light/dark theme**, **search & filter**, **sticky top bar**.
+- **Multi-language UI** (FR/ES/EN), **light/dark theme**, **search & status chips**, **sticky top bar**.
 - **In-app PDF viewer**, **drag-and-drop**, **keyboard shortcuts**.
-- Per-tab **« How to use »** help.
+- A single **« How to use »** button (top bar) with all sections in one window.
 
 ## Keyboard shortcuts
 
@@ -214,15 +236,17 @@ NotesDeFraisBDI/
 ├── CLAUDE.md · README.md
 ├── web/                   ← UI (vanilla JS, no framework)
 │   ├── index.html · estilos.css · app.js
-│   ├── i18n.js            ← FR / ES / EN translations + per-tab help
+│   ├── i18n.js            ← FR / ES / EN translations + help texts
 │   └── logo-bdi.png
 ├── Signatures/            ← signature images (treasurer & members) — private
 ├── personnes.json         ← people + bank details (RIB/IBAN) — private, git-ignored
 └── Dossiers/              ← one folder per event
      └── <event>/
-          ├── evento.json   ← single file: meta + transcriptions + report data
+          ├── event.json    ← single file: meta + transcriptions + report data
+          ├── <report>.pdf         ← the generated blank report (after « Generate PDF »)
+          ├── <report>_signee.pdf  ← the signed report (after attaching it in the Signée tab)
           ├── Documents/    ← the uploaded files
-          └── _backups/     ← automatic backups of evento.json
+          └── _backups/     ← automatic backups of event.json
 ```
 
 ---
@@ -238,43 +262,44 @@ NotesDeFraisBDI/
     parameter is omitted automatically when the model is Haiku (which doesn't support it).
   - **Shutdown only on window close**: the browser sends `POST /api/cerrar` (a `pagehide` beacon); the
     server schedules shutdown in ~4 s, and a following `POST /api/ping` (after an F5) cancels it.
-  - **Backups**: every save copies the previous `evento.json` into `_backups/` (last *N* kept).
+  - **Backups**: every save copies the previous `event.json` into `_backups/` (last *N* kept). Older
+    events created as `evento.json` are renamed to `event.json` automatically on startup.
 - **Frontend** `web/` (vanilla JS): `index.html`, `estilos.css`, `app.js`, `i18n.js`. CDNs: `pdf.js`
   (thumbnails) and `html2canvas` (final PDF). The A4 paginator measures the real available height of
   the page once it's visible, so the signature block never gets cut.
 
 ## Data model
 
-`Dossiers/<id>/evento.json`:
+`Dossiers/<id>/event.json`:
 
 ```jsonc
 {
   "id", "nom", "section", "membre", "date", "creado",
   "iban": "FR76…",          // payee IBAN (from the chosen person; required before the PDF)
   "budget": 300,            // BDI max budget (number or null)
-  "estado": "brouillon",    // brouillon | a_verifier | valide | envoye | rembourse
-  "paye": false,
+  "estado": "brouillon",    // brouillon | a_verifier | valide | envoye | rembourse (= paid)
+  "signee": "NDF_..._signee.pdf",  // signed report attached in the Signée tab (or null)
   "ocr": { "facture1.pdf": "transcribed text", ... },
   "datos": {
     "numero_ndf": "NDF_<name-with-dashes>_<year>",
     "date_emission", "nom_membre", "iban", "section", "asso", "adresse", "date_evenement",
-    "lignes": [ { "article","date_achat","prix_ht","taux_tva","montant_ttc","fichier_source","confiance" } ],
+    "lignes": [ { "article","date_achat","prix_ht","taux_tva","montant_ttc","fichiers_source","confiance" } ],
     "observations": [ "note 1", ... ],
-    "signature": "file.png", "signature_membre": "file.png",
+    "signature": "file.png",   // treasurer of the parent association (member signs the print by hand)
     "ordre_pieces": [ "ticket.jpeg", "facture.pdf" ]
   }
 }
 ```
 
 People live in a separate, git-ignored `personnes.json`:
-`{ id, nom, titulaire, iban, bic, banque, domiciliation, creado }`.
+`{ id, nom, titulaire, iban, bic, banque, domiciliation, role, creado }`.
 
 ## REST API
 
 | Method | Route | Action |
 |---|---|---|
 | GET/POST | `/api/eventos` | list / create event |
-| GET/PUT/DELETE | `/api/eventos/:id` | detail / update meta (status, paid, budget) / delete |
+| GET/PUT/DELETE | `/api/eventos/:id` | detail / update meta (name, section, date, status, budget, member) / delete |
 | POST/DELETE/GET | `/api/eventos/:id/archivos[/:n]` | upload (with dedup) / delete / serve a file |
 | POST | `/api/eventos/:id/archivos/:n/renombrar` | rename a file |
 | POST | `/api/eventos/:id/analizar` | Claude reads the documents → ocr + data |
@@ -282,9 +307,11 @@ People live in a separate, git-ignored `personnes.json`:
 | POST | `/api/eventos/:id/regenerar` | re-extract from the transcriptions |
 | PUT | `/api/eventos/:id/datos` | save the report (autosave) |
 | POST | `/api/eventos/:id/pdf` | final PDF (report + attachments) |
+| POST/GET/DELETE | `/api/eventos/:id/signee` | attach / serve / delete the signed report (`_signee`) |
+| POST | `/api/eventos/:id/signee/abrir-carpeta` | reveal the signed report in Windows Explorer |
 | GET/POST/PUT/DELETE | `/api/personnes[/:pid]` | people CRUD |
 | POST | `/api/personnes/extraire` | extract bank details from a RIB (AI) |
-| GET/POST | `/api/firmas` · GET `/api/firmas/:n` | list / upload / serve signatures |
+| GET/POST/DELETE | `/api/firmas[/:n]` | list / upload / serve / delete signatures |
 | POST | `/api/ping` · `/api/cerrar` | heartbeat / close-on-window |
 
 ## Portability guarantee
