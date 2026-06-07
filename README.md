@@ -76,15 +76,21 @@ fills in the report. One API, one key.
 
 ## Running the app
 
-- **Windows:** double-click **`Iniciar.vbs`** (or `Iniciar.bat`). It starts the server **with no
-  terminal window** and opens your browser. The first run installs dependencies automatically. If
-  something fails and you want to see the logs, use **`Diagnostico.bat`** (windowed version).
+- **Windows:** double-click **`Start.bat`**. It starts the server **with no terminal window** and
+  opens your browser. The first run installs dependencies automatically. If something fails and you
+  want to see the logs, use **`Diagnose.bat`** (windowed version — see below).
 - **Any OS / manually:**
   ```bash
   npm install
   npm start
   ```
   Then open http://localhost:4317.
+
+> **What is `Diagnose.bat`?** The everyday launcher (`Start.bat`) runs the server **hidden**, so if
+> something goes wrong you see nothing. `Diagnose.bat` does the same job but **in a visible terminal
+> window**: it checks that Node.js is installed, installs dependencies if needed, warns if `.env` is
+> missing, then runs the server **printing all its logs and errors** (and opens the browser). Use it
+> whenever the app won't start or the AI analysis misbehaves, to read the actual error message.
 
 > The server **shuts down by itself when you close the browser window** (not on an inactivity timer);
 > reloading the page (F5) keeps it alive. If you edit `.env`, close and reopen. After updating the app
@@ -117,7 +123,7 @@ page) and fill in:
 | Field | Notes |
 |---|---|
 | **Name** | e.g. *World Week 2026* — used for the report number. |
-| **Section (pôle)** | One of: Events, RelEnt, Trez, Soirée, Comm, Cohez. |
+| **Section (pôle / club)** | A grouped dropdown: the 6 BDI **pôles** (Events, RelEnt, Trez, Soirée, Comm, Cohez) **and the subsidiary associations (clubs)** — Club Espagnol, Club Tunisien, CentraleSupélec Israël, BdI Metz, CS Asie, Club Argentin, CentraleSupélec Afrique, Club Brésil, CentraleSupélec Maroc, BdI Rennes, ItaliCS, Club Allemand, Club Chilien, CèdreS, Club Chinois. Club names are translated to the UI language. |
 | **Date** | Used for the report number's year. |
 | **Max budget** | The maximum the BDI allocated to this event (shown on the card and as "remaining budget"). |
 | **Member who paid** | A **dropdown** connected to the People database (their IBAN is attached automatically). |
@@ -166,7 +172,10 @@ A faithful, fully-editable preview of the official BDI report. The screen is spl
 Key behaviours:
 - **Everything auto-saves** (no save button). The IBAN field is filled from the chosen person but stays
   editable.
-- **Amounts are always in euros**, decimal comma; totals (HT / TTC) recompute live.
+- **Amounts are always in euros**, decimal comma. **VAT is ignored on purpose**: the AI reads the
+  **final amount paid (incl. tax)** straight into the **Prix HT** column, the **Taux TVA** column is a
+  fixed, non-editable **0 %** placeholder, and **Total HT = Total TTC = sum of the amounts** (recomputed
+  live). The treasurer never has to split VAT.
 - Each line has a **coloured border** showing the AI's **confidence** (green = high, amber = medium,
   red = low) so you know what to double-check — the legend explains it.
 - **One signature only — the treasurer of the parent association.** The **« Signature trésorier »**
@@ -224,37 +233,45 @@ folder** (Windows Explorer), **replace** or **delete** it.
 
 ## Project structure
 
+The repository root keeps only the launchers (`.bat`), the docs (`.md`), the env files and the files
+git/npm require there. **Code** lives in `src/`, **runtime data** in `data/`. All filenames are in
+English.
+
 ```
 NotesDeFraisBDI/
-├── Iniciar.vbs            ← start WITHOUT a terminal window
-├── Iniciar.bat            ← same (delegates to the .vbs)
-├── Diagnostico.bat        ← windowed version, to see errors
-├── servidor.js            ← backend (Express + Anthropic SDK + pdf-lib)
-├── package.json
-├── .env.example           ← key template (copy to .env)
-├── .gitignore             ← excludes .env, Dossiers/, Signatures/, personnes.json
-├── CLAUDE.md · README.md
-├── web/                   ← UI (vanilla JS, no framework)
-│   ├── index.html · estilos.css · app.js
-│   ├── i18n.js            ← FR / ES / EN translations + help texts
-│   └── logo-bdi.png
-├── Signatures/            ← signature images (treasurer & members) — private
-├── personnes.json         ← people + bank details (RIB/IBAN) — private, git-ignored
-└── Dossiers/              ← one folder per event
-     └── <event>/
-          ├── event.json    ← single file: meta + transcriptions + report data
-          ├── <report>.pdf         ← the generated blank report (after « Generate PDF »)
-          ├── <report>_signee.pdf  ← the signed report (after attaching it in the Signée tab)
-          ├── Documents/    ← the uploaded files
-          └── _backups/     ← automatic backups of event.json
+├── Start.bat              ← start WITHOUT a terminal window (delegates to src/Start.vbs)
+├── Diagnose.bat          ← windowed version, to see logs/errors
+├── README.md · CLAUDE.md
+├── .env.example          ← key template (copy to .env)
+├── .gitignore            ← excludes .env, data/Cases/, data/Signatures/, data/people.json
+├── package.json · package-lock.json · node_modules/   ← must stay at the root (npm)
+├── src/
+│   ├── server.js         ← backend (Express + Anthropic SDK + pdf-lib)
+│   ├── Start.vbs         ← hidden launcher (the project root is its parent folder)
+│   └── web/              ← UI (vanilla JS, no framework)
+│       ├── index.html · styles.css · app.js
+│       ├── i18n.js       ← FR / ES / EN translations + help texts
+│       └── logo-bdi.png
+└── data/                 ← runtime data (contents git-ignored)
+    ├── Signatures/       ← signature images (treasurer) — private
+    ├── people.json       ← people + bank details (RIB/IBAN) — private
+    └── Cases/            ← one folder per event
+         └── <event>/
+              ├── event.json    ← single file: meta + transcriptions + report data
+              ├── <report>.pdf         ← the generated blank report (after « Generate PDF »)
+              ├── <report>_signee.pdf  ← the signed report (after attaching it in the Signée tab)
+              ├── Documents/    ← the uploaded files
+              └── _backups/     ← automatic backups of event.json
 ```
 
 ---
 
 ## How it works (technical)
 
-- **Backend** `servidor.js`: Node + Express, no build step. Uses the official `@anthropic-ai/sdk` and
-  `pdf-lib`. Serves `web/` and exposes a REST API under `/api`.
+- **Backend** `src/server.js`: Node + Express, no build step. Uses the official `@anthropic-ai/sdk` and
+  `pdf-lib`. Serves `src/web/` and exposes a REST API under `/api`. Paths are resolved relative to the
+  project root (`__dirname/..`) and `.env` is loaded from there explicitly, so the server works from
+  any working directory.
   - **Final PDF**: the browser rasterises each A4 page of the report with **html2canvas** and POSTs the
     images + the chosen attachment order; the server concatenates everything with **pdf-lib** (report
     images become pages; attachment PDFs are copied page-by-page, images are embedded into A4 pages).
@@ -264,13 +281,13 @@ NotesDeFraisBDI/
     server schedules shutdown in ~4 s, and a following `POST /api/ping` (after an F5) cancels it.
   - **Backups**: every save copies the previous `event.json` into `_backups/` (last *N* kept). Older
     events created as `evento.json` are renamed to `event.json` automatically on startup.
-- **Frontend** `web/` (vanilla JS): `index.html`, `estilos.css`, `app.js`, `i18n.js`. CDNs: `pdf.js`
+- **Frontend** `src/web/` (vanilla JS): `index.html`, `styles.css`, `app.js`, `i18n.js`. CDNs: `pdf.js`
   (thumbnails) and `html2canvas` (final PDF). The A4 paginator measures the real available height of
   the page once it's visible, so the signature block never gets cut.
 
 ## Data model
 
-`Dossiers/<id>/event.json`:
+`data/Cases/<id>/event.json`:
 
 ```jsonc
 {
@@ -283,6 +300,7 @@ NotesDeFraisBDI/
   "datos": {
     "numero_ndf": "NDF_<name-with-dashes>_<year>",
     "date_emission", "nom_membre", "iban", "section", "asso", "adresse", "date_evenement",
+    // VAT is ignored: prix_ht = final amount paid, taux_tva is always 0, montant_ttc = prix_ht.
     "lignes": [ { "article","date_achat","prix_ht","taux_tva","montant_ttc","fichiers_source","confiance" } ],
     "observations": [ "note 1", ... ],
     "signature": "file.png",   // treasurer of the parent association (member signs the print by hand)
@@ -291,7 +309,7 @@ NotesDeFraisBDI/
 }
 ```
 
-People live in a separate, git-ignored `personnes.json`:
+People live in a separate, git-ignored `data/people.json`:
 `{ id, nom, titulaire, iban, bic, banque, domiciliation, role, creado }`.
 
 ## REST API
@@ -318,13 +336,14 @@ People live in a separate, git-ignored `personnes.json`:
 
 As long as the whole app lives in one folder with this structure, it works on **any computer with
 Node ≥ 20**: every path is relative, there are no native binaries and no build step, and all data and
-secrets live inside the folder. Just copy it and run `Iniciar.vbs` (or `npm install && npm start`). On
+secrets live inside the folder. Just copy it and run `Start.bat` (or `npm install && npm start`). On
 a new machine you only need to recreate `.env` with your key (it is never copied with the repo).
 
 ## Privacy & the public repo
 
-`.gitignore` excludes `.env` (your key), `Dossiers/` (real data), `Signatures/` (signature images) and
-`personnes.json` (bank details), so this repository can be public without leaking anything sensitive.
+`.gitignore` excludes `.env` (your key), `data/Cases/` (real data), `data/Signatures/` (signature
+images) and `data/people.json` (bank details), so this repository can be public without leaking
+anything sensitive.
 
 ## Design decisions
 
@@ -341,13 +360,13 @@ a new machine you only need to recreate `.env` with your key (it is never copied
 
 ## Troubleshooting
 
-- **"Server stopped" banner / connection refused** → the server isn't running. Reopen `Iniciar.vbs`,
+- **"Server stopped" banner / connection refused** → the server isn't running. Reopen `Start.bat`,
   then click *Retry* or reload.
 - **AI analysis does nothing / errors** → check `ANTHROPIC_API_KEY` in `.env`, then restart.
 - **PDF colours/logo missing when printing the in-app preview** → in the browser print dialog enable
   *Background graphics*. (The final PDF from « Generate PDF » already includes them.)
 - **Changes don't show up** → hard-reload with **Ctrl+F5**.
-- **See logs** → start with `Diagnostico.bat` instead of `Iniciar.vbs`.
+- **See logs** → start with `Diagnose.bat` instead of `Start.bat`.
 
 ## Roadmap ideas
 

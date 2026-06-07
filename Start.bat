@@ -1,9 +1,9 @@
 @echo off
 REM ============================================================
-REM  Iniciar.bat — Arranca la app SIN ventana persistente.
-REM  Delega en Iniciar.vbs (que corre el servidor oculto) y
+REM  Start.bat — Arranca la app SIN ventana persistente.
+REM  Delega en src\Start.vbs (que corre el servidor oculto) y
 REM  se cierra al instante. Si quieres ver los mensajes/errores,
-REM  usa "Diagnostico.bat".
+REM  usa "Diagnose.bat".
 REM ============================================================
-start "" "%~dp0Iniciar.vbs"
+start "" "%~dp0src\Start.vbs"
 exit

@@ -1,11 +1,11 @@
 @echo off
 REM ============================================================
-REM  Diagnostico.bat — Arranca la app CON ventana visible para
+REM  Diagnose.bat — Arranca la app CON ventana visible para
 REM  ver mensajes y errores (Node, npm install, servidor).
-REM  Para el uso normal, usa "Iniciar.bat" o "Iniciar.vbs".
+REM  Para el uso normal, usa "Start.bat".
 REM ============================================================
 cd /d "%~dp0"
-title BDI - Notes de Frais (diagnostico)
+title BDI - Notes de Frais (diagnose)
 
 where node >nul 2>nul
 if errorlevel 1 (
@@ -38,6 +38,6 @@ if not exist ".env" (
 )
 
 start "" /b cmd /c "timeout /t 2 >nul & start http://localhost:4317"
-node servidor.js
+node src\server.js
 
 pause

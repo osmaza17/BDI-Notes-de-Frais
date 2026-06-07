@@ -6,15 +6,15 @@ node_modules/
 
 # Datos reales (facturas, tickets, attestations, NDF generadas, backups)
 # Se conserva la carpeta pero no su contenido sensible
-Dossiers/*
-!Dossiers/.gitkeep
+data/Cases/*
+!data/Cases/.gitkeep
 
 # Firmas (imágenes personales del tesorero y de los miembros)
-Signatures/*
-!Signatures/.gitkeep
+data/Signatures/*
+!data/Signatures/.gitkeep
 
 # Base de datos de personas con datos bancarios (RIB / IBAN) — sensible
-personnes.json
+data/people.json
 
 # Sistema
 .DS_Store

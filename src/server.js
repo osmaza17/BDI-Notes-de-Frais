@@ -1,11 +1,11 @@
 // ============================================================
-//  servidor.js — Motor local de la app de Notes de Frais del BDI.
+//  server.js — Motor local de la app de Notes de Frais del BDI.
 //
 //  Pipeline: el usuario sube facturas/tickets/attestations →
 //  se envían DIRECTAMENTE a la API de Anthropic (Claude), que
 //  transcribe cada documento y extrae las líneas de la NDF.
 //
-//  Almacenamiento por evento (carpeta en /Dossiers/<id>/):
+//  Almacenamiento por evento (carpeta en /data/Cases/<id>/):
 //   - event.json    → ÚNICO fichero con TODA la info del evento.
 //   - Documents/    → subcarpeta con los ficheros aportados.
 //   - _backups/     → copias de seguridad de event.json.
@@ -16,7 +16,7 @@
 //  Claves en .env (solo ANTHROPIC_API_KEY).
 // ============================================================
 
-import 'dotenv/config';
+import dotenv from 'dotenv';
 import express from 'express';
 import Anthropic from '@anthropic-ai/sdk';
 import { PDFDocument } from 'pdf-lib';
@@ -26,11 +26,20 @@ import crypto from 'node:crypto';
 import { execFile } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
+// Estructura de carpetas (relativa, portable):
+//   <raíz>/src/server.js  ← este archivo (__dirname = <raíz>/src)
+//   <raíz>/src/web/       ← frontend servido como estático
+//   <raíz>/data/          ← datos en runtime (Cases/, Signatures/, people.json)
+//   <raíz>/.env           ← clave de API (se carga aquí, sin depender del cwd)
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const DIR_DOSSIERS = path.join(__dirname, 'Dossiers');
+const RAIZ = path.join(__dirname, '..');
+const DIR_DATOS = path.join(RAIZ, 'data');
+dotenv.config({ path: path.join(RAIZ, '.env') });
+
+const DIR_DOSSIERS = path.join(DIR_DATOS, 'Cases');
 const DIR_WEB = path.join(__dirname, 'web');
-const DIR_FIRMAS = path.join(__dirname, 'Signatures');
-const RUTA_PERSONAS = path.join(__dirname, 'personnes.json');
+const DIR_FIRMAS = path.join(DIR_DATOS, 'Signatures');
+const RUTA_PERSONAS = path.join(DIR_DATOS, 'people.json');
 
 const PORT = process.env.PORT || 4317;
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
@@ -131,9 +140,9 @@ const ESQUEMA_LIGNE = {
   properties: {
     article: { type: 'string', description: "Désignation courte de l'achat en français." },
     date_achat: { type: 'string', description: "Date de l'achat au format JJ/MM/AAAA. Vide si inconnue." },
-    prix_ht: { type: 'number', description: "Prix hors taxes en euros, pour CE taux de TVA. Si la TVA n'est pas détaillée, = montant TTC." },
-    taux_tva: { type: 'number', description: "UN SEUL taux de TVA en pourcentage (ex: 20, 5.5, 0). Jamais plusieurs taux : si un achat mélange deux taux, fais deux lignes. 0 si non détaillé." },
-    montant_ttc: { type: 'number', description: 'Montant TTC pour cette ligne (prix_ht · (1 + taux_tva/100)).' },
+    prix_ht: { type: 'number', description: "Montant TOTAL payé en euros, toutes taxes comprises (TTC) — le montant final qui figure sur le ticket ou la facture. On ne décompose JAMAIS la TVA." },
+    taux_tva: { type: 'number', description: 'Toujours 0. La TVA est ignorée : on ne saisit que le montant final.' },
+    montant_ttc: { type: 'number', description: 'Égal à prix_ht (le montant final payé).' },
     fichiers_source: { type: 'array', items: { type: 'string' }, description: "Noms exacts de TOUS les fichiers dont provient cette ligne (la facture ET son attestation sur l'honneur de soutien le cas échéant)." },
     confiance: { type: 'string', enum: ['haute', 'moyenne', 'basse'], description: "Ton niveau de confiance dans l'exactitude des montants/données de cette ligne." },
   },
@@ -188,10 +197,10 @@ On te fournit les pièces justificatives (factures, tickets de caisse, attestati
 
 Règles :
 - Lis attentivement chaque document fourni (image ou PDF) et transcris fidèlement son texte.
-- Une ligne par achat ET par taux de TVA. Un ticket de caisse accompagné de son attestation sur l'honneur = une seule ligne (utilise le ticket pour les montants, l'attestation pour l'objet) ; renseigne alors les DEUX fichiers dans "fichiers_source".
+- Une ligne par achat. Un ticket de caisse accompagné de son attestation sur l'honneur = une seule ligne (utilise le ticket pour les montants, l'attestation pour l'objet) ; renseigne alors les DEUX fichiers dans "fichiers_source".
 - Les attestations sur l'honneur seules (sans montant) ne génèrent PAS de ligne propre : sers-t'en pour préciser l'objet des autres lignes, et cite-les dans "fichiers_source" de la ligne qu'elles appuient.
 - "fichiers_source" doit lister TOUS les fichiers d'où sort la ligne, pour qu'aucune pièce réellement utilisée ne soit signalée comme « non utilisée ».
-- taux_tva est UN SEUL nombre (ex : 20, 5.5, 0), jamais plusieurs. Si une facture mélange plusieurs taux, crée une ligne distincte par taux (répartis le HT correspondant). Montants en euros. Si la TVA n'est pas détaillée, taux_tva = 0 et prix_ht = montant_ttc.
+- IMPORTANT — LA TVA EST TOTALEMENT IGNORÉE. On NE décompose JAMAIS la TVA et on ne fait JAMAIS de lignes séparées par taux. Pour chaque ligne : prix_ht = le MONTANT FINAL PAYÉ (toutes taxes comprises, le total qui figure sur le ticket/facture), taux_tva = 0, montant_ttc = ce même montant final. Ne calcule rien, recopie simplement le montant total payé.
 - Rédige les libellés (article) en français, de façon concise.
 - Pour chaque ligne, indique ta "confiance" (haute/moyenne/basse) selon la lisibilité du document et ta certitude sur les montants.
 - Pour chaque document qui est une "attestation sur l'honneur" : vérifie si elle est SIGNÉE et entièrement REMPLIE (montant, date, nom du signataire). Si la signature manque ou si un champ est vide/incomplet, ajoute une remarque explicite dans "observations" (ex : « L'attestation "X" n'est pas signée » ou « L'attestation "X" est incomplète : il manque la date »).
@@ -286,7 +295,8 @@ function construirDatos(ev, extraido) {
     asso: `Bureau de l'International (${seccion})`,
     adresse: ADRESSE_BDI,
     date_evenement: ev.date || '',
-    lignes: extraido.lignes || [],
+    // La TVA est ignorée : on force taux_tva=0 et montant_ttc=prix_ht (montant final payé).
+    lignes: (extraido.lignes || []).map((l) => ({ ...l, taux_tva: 0, montant_ttc: Number(l.prix_ht) || 0 })),
     observations: Array.isArray(obs) ? obs : obs ? [obs] : [],
     signature: '',          // firma del tesorero (fichero en /Signatures)
     signature_membre: '',   // firma del miembro
@@ -605,7 +615,7 @@ app.put('/api/eventos/:id/datos', async (req, res) => {
   res.json({ ok: true });
 });
 
-// ---------- Personas (base de datos de RIB en personnes.json) ----------
+// ---------- Personas (base de datos de RIB en data/people.json) ----------
 async function leerPersonas() { return (await leerJSON(RUTA_PERSONAS, [])) || []; }
 async function guardarPersonas(lista) { await escribirJSON(RUTA_PERSONAS, lista); }
 const pid = () => 'p' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);

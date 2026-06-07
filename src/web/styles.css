@@ -1,5 +1,5 @@
 /* ============================================================
-   estilos.css — Estética inspirada en la app de Fran.
+   styles.css — Estética inspirada en la app de Fran.
    Paleta: fondo #e1e1e1, textos #1f3044.
    Tipografías: Libre Baskerville (títulos) + IBM Plex Sans (cuerpo).
    Tema claro/oscuro mediante html[data-theme="oscuro"].
@@ -613,6 +613,8 @@ button.grande { font-size: 15px; padding: 12px 20px; }
 /* Prix HT / Taux TVA: número pegado al símbolo (€ / %) no editable */
 #hoja-ndf .ndf-tabla td.prix .num, #hoja-ndf .ndf-tabla td.taux .num { outline: none; min-width: 6mm; display: inline-block; }
 #hoja-ndf .ndf-tabla td.prix .num:focus, #hoja-ndf .ndf-tabla td.taux .num:focus { background: #eef3fa; }
+/* Taux TVA: placeholder fijo a 0 % (la TVA se ignora; no editable) */
+#hoja-ndf .ndf-tabla td.taux .tva-fixe { color: #000; }
 #hoja-ndf .ndf-tabla .btn-quitar {
   background: var(--rojo); color: #fff; border: none; border-radius: 4px;
   font-size: 10px; padding: 1px 5px; cursor: pointer; flex: none;

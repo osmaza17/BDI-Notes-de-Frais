@@ -48,16 +48,64 @@ function leerArchivoBase64(file) {
   });
 }
 function aNumero(v) { return parseFloat(String(v ?? '').replace(/\s/g, '').replace(',', '.')) || 0; }
-function tasaTVA(taux) { const n = parseFloat(String(taux ?? '').replace(',', '.').replace('%', '')); return isNaN(n) ? 0 : n / 100; }
 function numFR(n) { const x = Number(n); return isFinite(x) ? x.toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : ''; }
 function eur(n) { return numFR(n) + ' €'; }
 function escapar(s) { return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
 function fmtFecha(iso) { const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso || ''); return m ? `${m[3]}/${m[2]}/${m[1]}` : (iso || ''); }
 function anioDe(ev) { return (ev.date && /^\d{4}/.test(ev.date)) ? ev.date.slice(0, 4) : new Date(ev.creado || Date.now()).getFullYear().toString(); }
 function seccionDe(ev) { return ev.section || ev.club || ''; }
+
+// ---- Secciones del desplegable: pôles del BDI + associations filles (clubes) ----
+// `val` es el valor canónico que se GUARDA (y aparece en la NDF, en francés);
+// fr/es/en son solo etiquetas visibles. Los pôles no se traducen (nombres propios).
+const SECCIONES = {
+  poles: ['Pôle Events', 'Pôle RelEnt', 'Pôle Trez', 'Pôle Soirée', 'Pôle Comm', 'Pôle Cohez'],
+  clubs: [
+    { val: 'Club Español',                 fr: 'Club Espagnol',                 es: 'Club Español',                  en: 'Spanish Club' },
+    { val: 'Club Tunisien CentraleSupélec', fr: 'Club Tunisien CentraleSupélec', es: 'Club Tunecino CentraleSupélec', en: 'Tunisian Club CentraleSupélec' },
+    { val: 'CentraleSupélec Israël',       fr: 'CentraleSupélec Israël',        es: 'CentraleSupélec Israel',        en: 'CentraleSupélec Israel' },
+    { val: 'BdI Metz',                     fr: 'BdI Metz',                      es: 'BdI Metz',                      en: 'BdI Metz' },
+    { val: 'CS Asie',                      fr: 'CS Asie',                       es: 'CS Asia',                       en: 'CS Asia' },
+    { val: 'Club Argentin',                fr: 'Club Argentin',                 es: 'Club Argentino',                en: 'Argentine Club' },
+    { val: 'CentraleSupélec Afrique',      fr: 'CentraleSupélec Afrique',       es: 'CentraleSupélec África',        en: 'CentraleSupélec Africa' },
+    { val: 'Club Brésil',                  fr: 'Club Brésil',                   es: 'Club Brasil',                   en: 'Brazil Club' },
+    { val: 'CentraleSupélec Maroc',        fr: 'CentraleSupélec Maroc',         es: 'CentraleSupélec Marruecos',     en: 'CentraleSupélec Morocco' },
+    { val: 'BdI Rennes',                   fr: 'BdI Rennes',                    es: 'BdI Rennes',                    en: 'BdI Rennes' },
+    { val: 'ItaliCS',                      fr: 'ItaliCS',                       es: 'ItaliCS',                       en: 'ItaliCS' },
+    { val: 'Club Allemand',                fr: 'Club Allemand',                 es: 'Club Alemán',                   en: 'German Club' },
+    { val: 'Club Chilien',                 fr: 'Club Chilien',                  es: 'Club Chileno',                  en: 'Chilean Club' },
+    { val: 'CèdreS',                       fr: 'CèdreS',                        es: 'CèdreS',                        en: 'CèdreS' },
+    { val: 'Club Chinois',                 fr: 'Club Chinois',                  es: 'Club Chino',                    en: 'Chinese Club' },
+  ],
+};
+function labelSeccion(o) { return typeof o === 'string' ? o : (o[IDIOMA] || o.fr || o.val); }
+// Devuelve la etiqueta traducida para un valor guardado (para mostrar en tarjetas, etc.).
+function nombreSeccion(val) {
+  if (!val) return '';
+  const c = SECCIONES.clubs.find((o) => o.val === val);
+  return c ? labelSeccion(c) : val;
+}
+// Rellena un <select> de sección con los pôles y los clubes, conservando la selección.
+function poblarSelectSeccion(sel, conPlaceholder) {
+  if (!sel) return;
+  const prev = sel.value;
+  let html = conPlaceholder ? `<option value="" disabled ${prev ? '' : 'selected'}>${escapar(t('form.choose'))}</option>` : '';
+  html += `<optgroup label="${escapar(t('section.poles'))}">`;
+  for (const o of SECCIONES.poles) html += `<option value="${escapar(o)}">${escapar(o)}</option>`;
+  html += `</optgroup><optgroup label="${escapar(t('section.clubs'))}">`;
+  for (const o of SECCIONES.clubs) html += `<option value="${escapar(o.val)}">${escapar(labelSeccion(o))}</option>`;
+  html += `</optgroup>`;
+  sel.innerHTML = html;
+  if (prev) sel.value = prev;
+}
+function poblarSelectsSeccion() {
+  poblarSelectSeccion($('#nuevo-section'), true);
+  poblarSelectSeccion($('#info-section'), false);
+}
 const esImagen = (n) => /\.(jpe?g|png|webp|gif|bmp)$/i.test(n);
 const urlArchivo = (id, n) => `/api/eventos/${id}/archivos/${encodeURIComponent(n)}`;
-function totalTTC(d) { let t = 0; for (const l of (d?.lignes || [])) t += (Number(l.prix_ht) || 0) * (1 + tasaTVA(l.taux_tva)); return t; }
+// La TVA est ignorée : prix_ht est déjà le montant final payé, donc Total TTC = Total HT.
+function totalTTC(d) { let t = 0; for (const l of (d?.lignes || [])) t += (Number(l.prix_ht) || 0); return t; }
 
 function rolLabel(role) { return t('role.' + (role || 'membre')) || (role || ''); }
 function slugNombre(n) {
@@ -74,6 +122,7 @@ $('#sel-idioma').addEventListener('change', (e) => {
 });
 function reRenderTodo() {
   pintarEstado($('#estado-servidor').classList.contains('conectado'));
+  poblarSelectsSeccion();
   renderChipsEstado();
   if (!estado.activo) { renderEventos(); renderPersonnes(); }
   else { renderInfoEvento(); renderDocumentos(); renderAnalyse(); renderNDF(); renderSignee(); }
@@ -146,7 +195,7 @@ function coincide(ev) {
   const { texto, estados } = estado.filtro;
   if (estados.length && !estados.includes(ev.estado || 'brouillon')) return false;
   if (!texto) return true;
-  return [ev.nom, seccionDe(ev), ev.membre, anioDe(ev)].join(' ').toLowerCase().includes(texto);
+  return [ev.nom, seccionDe(ev), nombreSeccion(seccionDe(ev)), ev.membre, anioDe(ev)].join(' ').toLowerCase().includes(texto);
 }
 
 function renderEventos() {
@@ -180,7 +229,7 @@ function tarjetaEvento(ev) {
       <button class="icono btn-borrar-ev" title="Supprimer">🗑</button>
     </div>
     <div class="ev-nom">${escapar(ev.nom)}</div>
-    <div class="ev-section">${escapar(seccionDe(ev))}</div>
+    <div class="ev-section">${escapar(nombreSeccion(seccionDe(ev)))}</div>
     <div class="ev-meta">
       ${ev.date ? `<span>📅 ${escapar(fmtFecha(ev.date))}</span>` : '<span></span>'}
       <span>${ev.nArchivos} ${t('home.docs')}</span>
@@ -866,12 +915,9 @@ function filaLigne(l, i) {
       <td class="art"><button class="btn-quitar no-print" title="✕">✕</button><div class="ed" data-l="article" contenteditable="true">${escapar(l.article || '')}</div></td>
       <td><input data-l="date_achat" inputmode="numeric" value="${escapar(l.date_achat || '')}" /></td>
       <td class="prix"><span class="ed num" data-l="prix_ht" contenteditable="true">${l.prix_ht === '' || l.prix_ht == null ? '' : numFR(l.prix_ht)}</span> €</td>
-      <td class="taux"><span class="ed num" data-l="taux_tva" contenteditable="true">${tvaStr(l.taux_tva)}</span> %</td>
+      <td class="taux"><span class="tva-fixe">0 %</span></td>
     </tr>`;
 }
-// TVA: el dato es numérico (porcentaje). Mostrar sin decimales superfluos.
-function tvaNum(v) { const n = parseFloat(String(v ?? '').replace(',', '.').replace('%', '')); return isNaN(n) ? 0 : n; }
-function tvaStr(v) { const n = tvaNum(v); return Number.isInteger(n) ? String(n) : String(n).replace('.', ','); }
 // Restringe la entrada de un campo (input o contenteditable) a los caracteres permitidos.
 function soloPermitidos(el, re) {
   el.addEventListener('beforeinput', (e) => {
@@ -883,9 +929,9 @@ function soloPermitidos(el, re) {
   });
 }
 function htmlTotales(d) {
-  let ht = 0, ttc = 0;
-  for (const l of d.lignes || []) { const h = Number(l.prix_ht) || 0; ht += h; ttc += h * (1 + tasaTVA(l.taux_tva)); }
-  return `<tr class="total"><td></td><td></td><td><b>Total HT :</b> ${eur(ht)}</td><td><b>Total TTC :</b> ${eur(ttc)}</td></tr>`;
+  let ht = 0;
+  for (const l of d.lignes || []) ht += Number(l.prix_ht) || 0;
+  return `<tr class="total"><td></td><td></td><td><b>Total HT :</b> ${eur(ht)}</td><td><b>Total TTC :</b> ${eur(ht)}</td></tr>`;
 }
 function htmlSign(d) {
   const fT = d.signature ? `<img class="firma-img" src="/api/firmas/${encodeURIComponent(d.signature)}" alt="signature" />` : '';
@@ -990,12 +1036,13 @@ function conectarLignes(d) {
     const i = Number(tr.dataset.i); if (Number.isNaN(i)) return;
     tr.querySelectorAll('[data-l]').forEach((el) => {
       const campo = el.dataset.l;
-      if (campo === 'prix_ht' || campo === 'taux_tva') soloPermitidos(el, /[0-9.,]/);
+      // La columna Taux TVA es fija (0 %, no editable): solo prix_ht y date_achat son editables.
+      if (campo === 'prix_ht') soloPermitidos(el, /[0-9.,]/);
       if (campo === 'date_achat') soloPermitidos(el, /[0-9/]/);
       el.addEventListener('input', () => {
         const val = el.isContentEditable ? el.textContent : el.value;
-        d.lignes[i][campo] = (campo === 'prix_ht' || campo === 'taux_tva') ? aNumero(val) : val;
-        if (campo === 'prix_ht' || campo === 'taux_tva') { actualizarTotales(d); pintarBudget(); }
+        d.lignes[i][campo] = (campo === 'prix_ht') ? aNumero(val) : val;
+        if (campo === 'prix_ht') { d.lignes[i].montant_ttc = d.lignes[i].prix_ht; actualizarTotales(d); pintarBudget(); }
         autoguardarDatos();
       });
     });
@@ -1004,10 +1051,10 @@ function conectarLignes(d) {
   });
 }
 function actualizarTotales(d) {
-  let ht = 0, ttc = 0;
-  for (const l of d.lignes || []) { const h = Number(l.prix_ht) || 0; ht += h; ttc += h * (1 + tasaTVA(l.taux_tva)); }
+  let ht = 0;
+  for (const l of d.lignes || []) ht += Number(l.prix_ht) || 0;
   const fila = $('#hoja-ndf .ndf-tabla tr.total');
-  if (fila) { const td = fila.querySelectorAll('td'); td[2].innerHTML = `<b>Total HT :</b> ${eur(ht)}`; td[3].innerHTML = `<b>Total TTC :</b> ${eur(ttc)}`; }
+  if (fila) { const td = fila.querySelectorAll('td'); td[2].innerHTML = `<b>Total HT :</b> ${eur(ht)}`; td[3].innerHTML = `<b>Total TTC :</b> ${eur(ht)}`; }
 }
 function tieneApellido(nombre) {
   return String(nombre || '').split(/\s+/).some((tok) => { const l = tok.replace(/[^\p{L}]/gu, ''); return l.length >= 2 && l === l.toUpperCase() && l !== l.toLowerCase(); });
@@ -1214,10 +1261,10 @@ function exportarExcel() {
     ['Article', 'Date', 'Prix HT (€)', 'Taux TVA (%)', 'Montant TTC (€)'],
   ];
   for (const l of d.lignes || []) {
+    // La TVA est ignorée : prix_ht est le montant final, taux fixé à 0, TTC = HT.
     const h = Number(l.prix_ht) || 0;
-    const m = h * (1 + tasaTVA(l.taux_tva));
-    ht += h; ttc += m;
-    rows.push([l.article || '', l.date_achat || '', round2(h), tvaNum(l.taux_tva), round2(m)]);
+    ht += h; ttc += h;
+    rows.push([l.article || '', l.date_achat || '', round2(h), 0, round2(h)]);
   }
   rows.push([]);
   rows.push(['Total HT (€)', round2(ht), '', 'Total TTC (€)', round2(ttc)]);
@@ -1296,6 +1343,7 @@ async function aplicarHash() {
 
 // ---------- Arranque ----------
 aplicarIdioma();
+poblarSelectsSeccion();
 renderChipsEstado();
 cargarPersonas().finally(() => {
   cargarEventos().then(aplicarHash).catch((e) => toast('Erreur : ' + e.message, true));
