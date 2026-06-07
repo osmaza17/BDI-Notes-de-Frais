@@ -10,6 +10,7 @@ const REPO_URL = 'https://github.com/osmaza17/BDI-Notes-de-Frais';
 
 const estado = {
   eventos: [],
+  personas: [],
   activo: null,
   analizando: false,
   analisisToken: 0,
@@ -78,6 +79,9 @@ function mostrarVista(nombre) {
   $$('#tabs button[data-vista]').forEach((b) => b.classList.toggle('activa', b.dataset.vista === nombre));
   $$('.vista').forEach((v) => v.classList.remove('activa'));
   $('#vista-' + nombre).classList.add('activa');
+  // La paginación A4 necesita que la hoja sea visible para medir alturas;
+  // se repagina al mostrar la pestaña Note de Frais.
+  if (nombre === 'ndf' && datos()) paginarHoja(datos());
 }
 function volverAEventos() {
   estado.activo = null;
@@ -163,25 +167,153 @@ function tarjetaEvento(ev) {
 }
 
 // ---- Modal de creación (FAB "+") ----
-function abrirCrear() { $('#modal-crear').classList.add('show'); $('#nuevo-nom').focus(); }
+function abrirCrear() {
+  $('#crear-error').textContent = '';
+  llenarSelectorPersonas();
+  $('#modal-crear').classList.add('show');
+  $('#nuevo-nom').focus();
+}
 function cerrarCrear() { $('#modal-crear').classList.remove('show'); }
 $('#fab-crear').addEventListener('click', abrirCrear);
 $('#crear-cerrar').addEventListener('click', cerrarCrear);
 $('#modal-crear').addEventListener('click', (e) => { if (e.target.id === 'modal-crear') cerrarCrear(); });
 
+// Rellena el desplegable de personas en el modal de creación.
+function llenarSelectorPersonas(seleccionar) {
+  const sel = $('#nuevo-membre-sel');
+  const actual = seleccionar || sel.value;
+  sel.innerHTML = `<option value="">${t('form.choosePerson')}</option>` +
+    estado.personas.map((p) => `<option value="${p.id}">${escapar(p.nom)}</option>`).join('');
+  if (actual) sel.value = actual;
+  mostrarIbanPersona();
+}
+function mostrarIbanPersona() {
+  const p = estado.personas.find((x) => x.id === $('#nuevo-membre-sel').value);
+  $('#membre-iban-preview').textContent = p && p.iban ? `IBAN : ${p.iban}` : '';
+}
+$('#nuevo-membre-sel').addEventListener('change', mostrarIbanPersona);
+
 $('#btn-crear').addEventListener('click', async () => {
   const nom = $('#nuevo-nom').value.trim();
   const section = $('#nuevo-section').value;
-  const membre = $('#nuevo-membre').value.trim();
   const date = $('#nuevo-date').value;
   const budget = $('#nuevo-budget').value;
-  const iban = $('#nuevo-iban').value.trim();
-  if (!nom || !section) return toast(t('form.needNameSection'), true);
-  const ev = await api('/eventos', { method: 'POST', body: JSON.stringify({ nom, section, membre, date, budget, iban }) });
-  $('#nuevo-nom').value = $('#nuevo-membre').value = $('#nuevo-date').value = $('#nuevo-budget').value = $('#nuevo-iban').value = '';
-  $('#nuevo-section').selectedIndex = 0;
+  const persona = estado.personas.find((x) => x.id === $('#nuevo-membre-sel').value);
+  const err = $('#crear-error');
+  if (!nom || !section) { err.textContent = t('form.needNameSection'); return; }
+  if (!persona) { err.textContent = t('form.needPerson'); return; }
+  err.textContent = '';
+  const ev = await api('/eventos', { method: 'POST', body: JSON.stringify({
+    nom, section, date, budget, membre: persona.nom, iban: persona.iban || '',
+  }) });
+  $('#nuevo-nom').value = $('#nuevo-date').value = $('#nuevo-budget').value = '';
+  $('#nuevo-section').selectedIndex = 0; $('#nuevo-membre-sel').value = ''; mostrarIbanPersona();
   cerrarCrear(); toast(t('event.created'));
   await cargarEventos(); await abrirEvento(ev.id);
+});
+
+// ============================================================
+//  PERSONNES (base de datos de RIB)
+// ============================================================
+async function cargarPersonas() { estado.personas = await api('/personnes').catch(() => []); }
+
+function mostrarPersonnes() {
+  estado.activo = null;
+  $('#tabs').style.display = 'none';
+  $('#fab-crear').style.display = 'none';
+  $('#evento-activo').textContent = t('header.noEvent');
+  $$('.vista').forEach((v) => v.classList.remove('activa'));
+  $('#vista-personnes').classList.add('activa');
+  renderPersonnes();
+}
+$('#btn-personnes').addEventListener('click', async () => { await cargarPersonas(); mostrarPersonnes(); });
+$('#btn-volver-perso').addEventListener('click', volverAEventos);
+
+function renderPersonnes() {
+  const cont = $('#personnes-lista');
+  if (!estado.personas.length) { cont.innerHTML = `<p class="vacio">${escapar(t('personnes.empty'))}</p>`; return; }
+  cont.innerHTML = '';
+  for (const p of estado.personas) {
+    const row = document.createElement('div');
+    row.className = 'personne-row';
+    row.innerHTML = `
+      <div class="personne-info">
+        <div class="personne-nom">${escapar(p.nom)}</div>
+        <div class="personne-iban">${escapar(p.iban || '—')}</div>
+        <div class="personne-extra muted">${[p.bic, p.banque].filter(Boolean).map(escapar).join(' · ')}</div>
+      </div>
+      <div class="barra-acciones">
+        <button class="sec peque btn-edit">${t('person.edit')}</button>
+        <button class="peligro peque btn-del">${t('person.del')}</button>
+      </div>`;
+    row.querySelector('.btn-edit').addEventListener('click', () => abrirPersonne(p));
+    row.querySelector('.btn-del').addEventListener('click', async () => {
+      if (!confirm(t('personnes.confirmDel', { x: p.nom }))) return;
+      await api('/personnes/' + p.id, { method: 'DELETE' });
+      await cargarPersonas(); renderPersonnes(); toast(t('personnes.deleted'));
+    });
+    cont.appendChild(row);
+  }
+}
+
+// Modal añadir/editar persona. `volver` indica a dónde regresar tras crear (para el flujo de evento).
+let personneEditId = null;
+let personneVolverACrear = false;
+function abrirPersonne(p, desdeCrear) {
+  personneEditId = p && p.id ? p.id : null;
+  personneVolverACrear = !!desdeCrear;
+  $('#personne-titulo').textContent = personneEditId ? t('person.editTitle') : t('person.addTitle');
+  $('#p-titulaire').value = p?.titulaire || p?.nom || '';
+  $('#p-iban').value = p?.iban || '';
+  $('#p-bic').value = p?.bic || '';
+  $('#p-banque').value = p?.banque || '';
+  $('#p-domiciliation').value = p?.domiciliation || '';
+  $('#personne-error').textContent = '';
+  $('#personne-rib-estado').textContent = '';
+  $('#modal-personne').classList.add('show');
+}
+function cerrarPersonne() { $('#modal-personne').classList.remove('show'); }
+$('#personne-cerrar').addEventListener('click', cerrarPersonne);
+$('#modal-personne').addEventListener('click', (e) => { if (e.target.id === 'modal-personne') cerrarPersonne(); });
+$('#btn-add-personne').addEventListener('click', () => abrirPersonne(null, false));
+$('#btn-add-personne-modal').addEventListener('click', () => abrirPersonne(null, true));
+
+// Importar RIB → IA rellena los campos.
+$('#personne-importar').addEventListener('click', () => $('#personne-rib').click());
+$('#personne-rib').addEventListener('change', async () => {
+  const file = $('#personne-rib').files[0]; if (!file) return;
+  const est = $('#personne-rib-estado');
+  est.innerHTML = '<span class="spinner"></span> ' + t('person.extracting');
+  try {
+    const contenidoBase64 = await leerArchivoBase64(file);
+    const r = await api('/personnes/extraire', { method: 'POST', body: JSON.stringify({ nombre: file.name, contenidoBase64 }) });
+    $('#p-titulaire').value = r.titulaire || $('#p-titulaire').value;
+    $('#p-iban').value = r.iban || '';
+    $('#p-bic').value = r.bic || '';
+    $('#p-banque').value = r.banque || '';
+    $('#p-domiciliation').value = r.domiciliation || '';
+    est.textContent = t('person.extractOk');
+  } catch (e) { est.textContent = 'Erreur : ' + e.message; }
+  $('#personne-rib').value = '';
+});
+
+$('#btn-save-personne').addEventListener('click', async () => {
+  const titulaire = $('#p-titulaire').value.trim();
+  const err = $('#personne-error');
+  if (!titulaire) { err.textContent = t('person.needName'); return; }
+  err.textContent = '';
+  const cuerpo = {
+    nom: titulaire, titulaire,
+    iban: $('#p-iban').value.trim(), bic: $('#p-bic').value.trim(),
+    banque: $('#p-banque').value.trim(), domiciliation: $('#p-domiciliation').value.trim(),
+  };
+  let saved;
+  if (personneEditId) saved = await api('/personnes/' + personneEditId, { method: 'PUT', body: JSON.stringify(cuerpo) });
+  else saved = await api('/personnes', { method: 'POST', body: JSON.stringify(cuerpo) });
+  await cargarPersonas();
+  cerrarPersonne(); toast(t('personnes.saved'));
+  if (personneVolverACrear) llenarSelectorPersonas(saved.id);   // vuelve al modal de evento con la persona elegida
+  else renderPersonnes();
 });
 
 // ---------- Abrir evento ----------
@@ -600,24 +732,45 @@ function paginarHoja(d) {
   barra.innerHTML = `<button class="btn-add-ligne" id="btn-add-ligne">${t('ndf.addLine')}</button>`;
   hoja.appendChild(barra);
 
-  const PX = 96 / 25.4;
-  const BUDGET = 297 * PX - (16 + 16) * PX - 26;
-  let pagina, tabla, tbody;
+  let pagina, tabla, tbody, avail = 0;
+  function calcAvail() {
+    const cs = getComputedStyle(pagina);
+    // Altura útil real de la página A4 (independiente del cálculo en mm).
+    avail = pagina.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom);
+  }
   function nuevaPagina(conCab) {
     pagina = document.createElement('div'); pagina.className = 'ndf-page'; pagina.innerHTML = htmlBarras(); hoja.appendChild(pagina);
+    calcAvail();
     if (conCab) { const h = document.createElement('div'); h.innerHTML = htmlHeader() + htmlMeta(d); pagina.appendChild(h); }
   }
   function nuevaTabla(primera) { tabla = document.createElement('table'); tabla.className = 'ndf-tabla'; tabla.innerHTML = htmlColgroup() + htmlThead(primera) + '<tbody></tbody>'; pagina.appendChild(tabla); tbody = tabla.querySelector('tbody'); }
   function usado() { let h = 0; for (const c of pagina.children) if (!c.classList.contains('ndf-bar')) h += c.offsetHeight; return h; }
-  const cabe = () => usado() <= BUDGET;
+  // Margen de seguridad: nada debe quedar pegado al borde inferior.
+  const cabe = (reserva = 0) => usado() + reserva <= avail - 18;
+
+  // Mide la altura del bloque de firmas (fuera de pantalla) para reservarla.
+  function altoFirmas() {
+    const tmp = document.createElement('div');
+    tmp.style.cssText = 'position:absolute;visibility:hidden;width:176mm';
+    tmp.innerHTML = `<div class="ndf-page" style="height:auto;box-shadow:none;border:0">${htmlSign(d)}</div>`;
+    document.body.appendChild(tmp);
+    const h = tmp.querySelector('.ndf-sign').offsetHeight + 12;
+    tmp.remove();
+    return h;
+  }
 
   nuevaPagina(true); nuevaTabla(true);
-  (d.lignes || []).forEach((l, i) => {
+  const reservaFirmas = altoFirmas();
+
+  const lignes = d.lignes || [];
+  lignes.forEach((l, i) => {
     tbody.insertAdjacentHTML('beforeend', filaLigne(l, i));
     if (!cabe()) { tbody.lastElementChild.remove(); nuevaPagina(false); nuevaTabla(false); tbody.insertAdjacentHTML('beforeend', filaLigne(l, i)); }
   });
+  // La fila de totales debe caber junto con las firmas; si no, salta de página.
   tbody.insertAdjacentHTML('beforeend', htmlTotales(d));
-  if (!cabe()) { tbody.lastElementChild.remove(); nuevaPagina(false); nuevaTabla(false); tbody.insertAdjacentHTML('beforeend', htmlTotales(d)); }
+  if (!cabe(reservaFirmas)) { tbody.lastElementChild.remove(); nuevaPagina(false); nuevaTabla(false); tbody.insertAdjacentHTML('beforeend', htmlTotales(d)); }
+  // Firmas en la misma página si caben; si no, página nueva.
   pagina.insertAdjacentHTML('beforeend', htmlSign(d));
   if (!cabe()) { pagina.lastElementChild.remove(); nuevaPagina(false); pagina.insertAdjacentHTML('beforeend', htmlSign(d)); }
 
@@ -792,7 +945,7 @@ $('#modal-howto').addEventListener('click', (e) => { if (e.target.id === 'modal-
 //  Atajos de teclado
 // ============================================================
 document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape') { cerrarAyuda(); cerrarVisor(); cerrarFirma(); cerrarCrear(); return; }
+  if (e.key === 'Escape') { cerrarAyuda(); cerrarVisor(); cerrarFirma(); cerrarCrear(); cerrarPersonne(); return; }
   const ctrl = e.ctrlKey || e.metaKey;
   if (ctrl && e.key.toLowerCase() === 's') { e.preventDefault(); if (estado.activo?.datos) { clearTimeout(tDatos); api(`/eventos/${estado.activo.id}/datos`, { method: 'PUT', body: JSON.stringify(estado.activo.datos) }).then(() => indicar(t('ndf.saved'))).catch(() => {}); } return; }
   if (ctrl && e.key.toLowerCase() === 'p') { if (estado.activo?.datos && $('#vista-ndf').classList.contains('activa')) { e.preventDefault(); generarPDF(); } return; }
@@ -834,4 +987,6 @@ async function aplicarHash() {
 
 // ---------- Arranque ----------
 aplicarIdioma();
-cargarEventos().then(aplicarHash).catch((e) => toast('Erreur : ' + e.message, true));
+cargarPersonas().finally(() => {
+  cargarEventos().then(aplicarHash).catch((e) => toast('Erreur : ' + e.message, true));
+});

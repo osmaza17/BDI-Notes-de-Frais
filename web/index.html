@@ -8,36 +8,40 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Libre+Baskerville:wght@400;700&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="estilos.css" />
-  <!-- pdf.js (miniaturas) + html2canvas (rasterizar la NDF para el PDF final) -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 </head>
 <body>
-  <header class="app no-print">
-    <div>
-      <h1>BDI · Notes de Frais</h1>
-      <div class="sub">Bureau de l'International — CentraleSupélec</div>
-      <div id="evento-activo" data-i18n="header.noEvent">Aucun événement sélectionné</div>
-    </div>
-    <div class="barra-acciones">
-      <span id="estado-servidor" class="estado-servidor desconectado">
-        <span class="punto"></span><span class="txt" data-i18n="server.connecting">Connexion…</span>
-      </span>
-      <select id="sel-idioma" class="sel-idioma" title="Language">
-        <option value="fr">🇫🇷 FR</option>
-        <option value="es">🇪🇸 ES</option>
-        <option value="en">🇬🇧 EN</option>
-      </select>
-      <button class="sec" id="btn-tema"><span data-i18n="theme">🌓 Thème</span></button>
-    </div>
-  </header>
+  <!-- Banner superior fijo (header + pestañas) -->
+  <div id="topbar" class="no-print">
+    <header class="app">
+      <img src="logo-bdi.png" class="app-logo" alt="BDI" />
+      <div class="app-titulos">
+        <h1>BDI · Notes de Frais</h1>
+        <div class="sub">Bureau de l'International — CentraleSupélec</div>
+        <div id="evento-activo" data-i18n="header.noEvent">Aucun événement sélectionné</div>
+      </div>
+      <div class="barra-acciones">
+        <span id="estado-servidor" class="estado-servidor desconectado">
+          <span class="punto"></span><span class="txt" data-i18n="server.connecting">Connexion…</span>
+        </span>
+        <button class="sec" id="btn-personnes">👤 <span data-i18n="tabs.personnes">Personnes</span></button>
+        <select id="sel-idioma" class="sel-idioma" title="Language">
+          <option value="fr">🇫🇷 FR</option>
+          <option value="es">🇪🇸 ES</option>
+          <option value="en">🇬🇧 EN</option>
+        </select>
+        <button class="sec" id="btn-tema"><span data-i18n="theme">🌓 Thème</span></button>
+      </div>
+    </header>
 
-  <nav class="tabs no-print" id="tabs" style="display:none">
-    <button id="btn-volver" class="tab-volver" data-i18n="tabs.back">← Événements</button>
-    <button data-vista="documents" class="activa" data-i18n="tabs.documents">Documents</button>
-    <button data-vista="analyse" data-i18n="tabs.analyse">Analyse</button>
-    <button data-vista="ndf" data-i18n="tabs.ndf">Note de Frais</button>
-  </nav>
+    <nav class="tabs" id="tabs" style="display:none">
+      <button id="btn-volver" class="tab-volver" data-i18n="tabs.back">← Événements</button>
+      <button data-vista="documents" class="activa" data-i18n="tabs.documents">Documents</button>
+      <button data-vista="analyse" data-i18n="tabs.analyse">Analyse</button>
+      <button data-vista="ndf" data-i18n="tabs.ndf">Note de Frais</button>
+    </nav>
+  </div>
 
   <main>
     <!-- ============ HOME : LISTA DE EVENTOS ============ -->
@@ -47,7 +51,7 @@
           <h2 data-i18n="home.title">Événements</h2>
           <button class="btn-howto" data-howto="eventos"><span data-i18n="howto.btn">❔ How to use</span></button>
         </div>
-        <div class="fila" style="margin-bottom:14px">
+        <div class="fila barra-busqueda">
           <input id="buscar" class="buscar" data-i18n-ph="home.search" placeholder="🔎 Rechercher…" />
           <select id="filtro-estado" class="filtro-estado">
             <option value="" data-i18n="home.allStates">Tous les états</option>
@@ -59,6 +63,24 @@
           </select>
         </div>
         <div id="grid-eventos" class="grid-anios"></div>
+      </div>
+    </section>
+
+    <!-- ============ PERSONNES (base de datos de RIB) ============ -->
+    <section class="vista" id="vista-personnes">
+      <div class="panel">
+        <div class="panel-head">
+          <div>
+            <h2 style="margin:0" data-i18n="personnes.title">Base de personnes</h2>
+            <p class="muted" style="margin:4px 0 0" data-i18n="personnes.sub">Personnes qui avancent les dépenses et leurs coordonnées bancaires (RIB).</p>
+          </div>
+          <div class="barra-acciones">
+            <button id="btn-volver-perso" class="sec" data-i18n="tabs.back">← Événements</button>
+            <button id="btn-add-personne" data-i18n="personnes.add">+ Ajouter une personne</button>
+            <button class="btn-howto" data-howto="personnes"><span data-i18n="howto.btn">❔ How to use</span></button>
+          </div>
+        </div>
+        <div id="personnes-lista"></div>
       </div>
     </section>
 
@@ -122,47 +144,61 @@
               <button id="btn-pdf" data-i18n="ndf.pdf">📄 Générer le PDF</button>
             </div>
           </div>
-          <!-- Estado del evento + pagado + presupuesto -->
-          <div class="ndf-control">
-            <label class="ctrl"><span data-i18n="ndf.statut">Statut</span>
-              <select id="sel-estado">
-                <option value="brouillon" data-i18n="estado.brouillon">Brouillon</option>
-                <option value="a_verifier" data-i18n="estado.a_verifier">À vérifier</option>
-                <option value="valide" data-i18n="estado.valide">Validé</option>
-                <option value="envoye" data-i18n="estado.envoye">Envoyé</option>
-                <option value="rembourse" data-i18n="estado.rembourse">Remboursé</option>
-              </select>
-            </label>
-            <button id="btn-paye" class="toggle-paye">Non payé</button>
-            <span id="budget-info" class="budget-info"></span>
-          </div>
         </div>
 
         <div class="ndf-layout">
-          <aside class="ndf-observations no-print">
-            <div id="aviso-orphelins" class="aviso-orphelins" style="display:none"></div>
-            <h3 data-i18n="ndf.obsTitle">Observations de l'IA</h3>
-            <p class="muted" data-i18n="ndf.obsSub">Remarques de l'analyse (non imprimées sur la NDF).</p>
-            <div id="obs-lista"></div>
-            <button class="sec peque" id="btn-add-obs" style="margin-top:10px" data-i18n="ndf.addObs">+ Ajouter une remarque</button>
+          <!-- Columna izquierda: estado/budget · observaciones · orden -->
+          <div class="ndf-col-izq no-print">
+            <div class="panel card-statut">
+              <div class="ndf-control">
+                <label class="ctrl"><span data-i18n="ndf.statut">Statut</span>
+                  <select id="sel-estado">
+                    <option value="brouillon" data-i18n="estado.brouillon">Brouillon</option>
+                    <option value="a_verifier" data-i18n="estado.a_verifier">À vérifier</option>
+                    <option value="valide" data-i18n="estado.valide">Validé</option>
+                    <option value="envoye" data-i18n="estado.envoye">Envoyé</option>
+                    <option value="rembourse" data-i18n="estado.rembourse">Remboursé</option>
+                  </select>
+                </label>
+                <button id="btn-paye" class="toggle-paye">Non payé</button>
+              </div>
+              <div id="budget-info" class="budget-info"></div>
+              <div id="aviso-orphelins" class="aviso-orphelins" style="display:none"></div>
+            </div>
 
-            <h3 style="margin-top:22px" data-i18n="ndf.ordreTitle">Ordre des pièces jointes</h3>
-            <p class="muted" data-i18n="ndf.ordreSub">Glisse les cartes pour définir leur ordre.</p>
-            <div id="ordre-cards" class="ordre-cards"></div>
-          </aside>
+            <div class="panel">
+              <h3 data-i18n="ndf.obsTitle">Observations de l'IA</h3>
+              <p class="muted" data-i18n="ndf.obsSub">Remarques de l'analyse (non imprimées sur la NDF).</p>
+              <div id="obs-lista"></div>
+              <button class="sec peque" id="btn-add-obs" style="margin-top:10px" data-i18n="ndf.addObs">+ Ajouter une remarque</button>
+            </div>
 
-          <div class="ndf-hoja-wrap">
-            <div id="hoja-ndf"></div>
+            <div class="panel">
+              <h3 data-i18n="ndf.ordreTitle">Ordre des pièces jointes</h3>
+              <p class="muted" data-i18n="ndf.ordreSub">Glisse les cartes pour définir leur ordre.</p>
+              <div id="ordre-cards" class="ordre-cards"></div>
+            </div>
+          </div>
+
+          <!-- Columna derecha: leyenda + preview -->
+          <div class="ndf-col-der">
+            <div class="panel no-print legende">
+              <b data-i18n="ndf.legendTitle">Code couleur des lignes (fiabilité de l'IA)</b>
+              <ul>
+                <li><span class="leg-box haute"></span> <span data-i18n="ndf.confHaute">Confiance élevée</span></li>
+                <li><span class="leg-box moyenne"></span> <span data-i18n="ndf.confMoyenne">Confiance moyenne — à vérifier</span></li>
+                <li><span class="leg-box basse"></span> <span data-i18n="ndf.confBasse">Confiance faible — à vérifier absolument</span></li>
+              </ul>
+            </div>
+            <div class="ndf-hoja-wrap"><div id="hoja-ndf"></div></div>
           </div>
         </div>
       </div>
     </section>
   </main>
 
-  <!-- Botón flotante "+" para crear evento (solo en la home) -->
   <button id="fab-crear" class="fab no-print" title="" data-i18n-title="home.newEvent">+</button>
 
-  <!-- Créditos (esquina inferior izquierda) -->
   <div class="creditos no-print">
     <a class="credito" href="https://www.linkedin.com/in/oscarmartinezzamora/" target="_blank" rel="noopener">
       <span data-i18n="credit">Développé par</span> <b>Óscar Martínez Zamora</b>
@@ -211,17 +247,47 @@
       <div class="fila" style="margin-top:10px">
         <div class="campo">
           <label data-i18n="form.member">Membre ayant engagé les dépenses</label>
-          <input id="nuevo-membre" data-i18n-ph="form.memberPh" placeholder="ex : Óscar MARTÍNEZ ZAMORA" />
+          <div class="fila-inline">
+            <select id="nuevo-membre-sel"><option value="" data-i18n="form.choosePerson">— Choisir une personne —</option></select>
+            <button class="sec" id="btn-add-personne-modal" type="button" data-i18n="form.addPerson">+ Personne</button>
+          </div>
+          <div id="membre-iban-preview" class="muted" style="margin-top:4px"></div>
         </div>
       </div>
-      <div class="fila" style="margin-top:10px">
-        <div class="campo">
-          <label data-i18n="form.iban">IBAN abonné (optionnel)</label>
-          <input id="nuevo-iban" data-i18n-ph="form.ibanPh" placeholder="ex : FR76 3000 4000 0500 0012 3456 789" />
-        </div>
-      </div>
+      <div class="modal-error" id="crear-error"></div>
       <div style="text-align:right; margin-top:16px">
         <button id="btn-crear" data-i18n="form.create">Créer</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: añadir / editar persona -->
+  <div id="modal-personne" class="modal no-print">
+    <div class="modal-caja">
+      <button class="modal-cerrar" id="personne-cerrar" title="Fermer">✕</button>
+      <h2 id="personne-titulo" data-i18n="person.addTitle">Ajouter une personne</h2>
+      <p class="muted" data-i18n="person.sub">Remplis les champs manuellement, ou importe un RIB et laisse l'IA les remplir.</p>
+      <div style="margin:10px 0">
+        <button class="sec" id="personne-importar" data-i18n="person.importRib">📎 Importer un RIB (PDF/image)</button>
+        <input type="file" id="personne-rib" accept=".pdf,.jpg,.jpeg,.png,.webp" style="display:none" />
+        <span id="personne-rib-estado" class="muted" style="margin-left:8px"></span>
+      </div>
+      <div class="fila">
+        <div class="campo"><label data-i18n="person.titulaire">Titulaire du compte</label><input id="p-titulaire" /></div>
+      </div>
+      <div class="fila" style="margin-top:10px">
+        <div class="campo"><label data-i18n="person.iban">IBAN</label><input id="p-iban" /></div>
+      </div>
+      <div class="fila" style="margin-top:10px">
+        <div class="campo"><label data-i18n="person.bic">BIC / SWIFT</label><input id="p-bic" /></div>
+        <div class="campo"><label data-i18n="person.banque">Banque</label><input id="p-banque" /></div>
+      </div>
+      <div class="fila" style="margin-top:10px">
+        <div class="campo"><label data-i18n="person.domiciliation">Domiciliation</label><input id="p-domiciliation" /></div>
+      </div>
+      <div class="modal-error" id="personne-error"></div>
+      <div style="text-align:right; margin-top:16px">
+        <button id="btn-save-personne" data-i18n="person.save">Enregistrer</button>
       </div>
     </div>
   </div>

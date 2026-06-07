@@ -69,8 +69,23 @@ La salida estructurada (`output_config.format` json_schema) sí funciona en Haik
   - **Duplicados**: al subir, el server calcula sha256 y rechaza (409) si ya existe un documento idéntico.
   - **Huérfanos**: documentos subidos que no aparecen en ninguna `ligne.fichier_source` → aviso en la NDF
     (`#aviso-orphelins`) y badge rojo en la tarjeta (`documentosHuerfanos()`).
-  - **IBAN del abonado** (`datos.iban`): opcional al crear el evento; editable en la NDF; **obligatorio
+  - **IBAN del abonado** (`datos.iban`): viene de la persona elegida; editable en la NDF; **obligatorio
     para generar el PDF** (`generarPDF()` bloquea si está vacío). Siempre en euros (no hay multidivisa).
+  - **Base de personas (RIB)**: `personnes.json` (gitignored, datos bancarios). Pestaña/vista Personnes;
+    el "membre" al crear evento es un **desplegable** conectado a esa base (su IBAN se copia al evento).
+    Alta de persona desde la pestaña o desde el modal de creación (`personneVolverACrear`); el formulario
+    permite **importar un RIB** → `POST /api/personnes/extraire` (Claude extrae titulaire/iban/bic/banque).
+  - **Paginación A4 (importante)**: `paginarHoja()` mide la altura real `clientHeight - padding` de cada
+    `.ndf-page` **solo cuando es visible**. Por eso `mostrarVista('ndf')` **re-pagina** (si se pagina con
+    la pestaña oculta, `clientHeight=0` y cada fila salta de página). Reserva el alto del bloque de firmas
+    (`altoFirmas()`) para que nunca se corten.
+  - **Layout NDF**: 2 columnas. Izquierda = cartas (estado/budget+huérfanos, observaciones, orden de
+    piezas), sin scroll interno (se expanden). Derecha = leyenda de colores + hoja. Botón "Add new line"
+    arriba-derecha (`.ndf-toolbar`).
+  - **Confianza por línea**: `ligne.confiance` → **reborde superpuesto** de la celda (`td.art/td.prix
+    ::after` con box-shadow inset), no fondo. Leyenda explicativa en la columna derecha.
+  - **UI**: logo BDI arriba-izq (`header .app-logo`); `#topbar` (header+pestañas) **sticky**; errores de
+    validación **dentro del modal** (`.modal-error`, no toast de fondo).
   - **Autoguardado** (`autoguardarDatos` / `autoguardarOcr`, debounce) y `guardarMeta()` (estado, payé,
     budget). No hay botón de guardar; atajo **Ctrl+S** fuerza, **Ctrl+P** genera PDF, ←/→ navegan en Analyse.
   - **NDF paginada A4**: `paginarHoja()` reparte filas en varias `.ndf-page` midiendo la altura real de
@@ -130,6 +145,8 @@ Reglas de negocio (no romper):
 | POST | `/api/eventos/:id/regenerar` | re-extraer desde transcripciones |
 | PUT | `/api/eventos/:id/datos` | guardar la NDF (autoguardado) |
 | POST | `/api/eventos/:id/pdf` | **PDF final** (NDF rasterizada + adjuntos) |
+| GET/POST/PUT/DELETE | `/api/personnes[/:pid]` | CRUD de personas (base de RIB) |
+| POST | `/api/personnes/extraire` | extraer datos bancarios de un RIB (Claude) |
 | GET/POST | `/api/firmas` · GET `/api/firmas/:n` | listar / subir / servir firmas |
 | POST | `/api/ping` · `/api/cerrar` | latido / cierre por ventana |
 

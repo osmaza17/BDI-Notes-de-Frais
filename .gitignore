@@ -13,6 +13,9 @@ Dossiers/*
 Signatures/*
 !Signatures/.gitkeep
 
+# Base de datos de personas con datos bancarios (RIB / IBAN) — sensible
+personnes.json
+
 # Sistema
 .DS_Store
 Thumbs.db

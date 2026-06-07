@@ -17,6 +17,36 @@ const I18N = {
     'theme': '🌓 Thème',
     'credit': 'Développé par',
     'repo': 'Code source',
+    'tabs.personnes': 'Personnes',
+    'personnes.title': 'Base de personnes',
+    'personnes.sub': 'Personnes qui avancent les dépenses et leurs coordonnées bancaires (RIB).',
+    'personnes.add': '+ Ajouter une personne',
+    'personnes.empty': 'Aucune personne enregistrée. Ajoute-en une.',
+    'personnes.confirmDel': 'Supprimer « {x} » de la base ?',
+    'personnes.deleted': 'Personne supprimée',
+    'personnes.saved': 'Personne enregistrée ✔',
+    'form.choosePerson': '— Choisir une personne —',
+    'form.addPerson': '+ Personne',
+    'form.needPerson': 'Choisis (ou ajoute) la personne qui a payé.',
+    'person.addTitle': 'Ajouter une personne',
+    'person.editTitle': 'Modifier la personne',
+    'person.sub': "Remplis les champs manuellement, ou importe un RIB et laisse l'IA les remplir.",
+    'person.titulaire': 'Titulaire du compte',
+    'person.iban': 'IBAN',
+    'person.bic': 'BIC / SWIFT',
+    'person.banque': 'Banque',
+    'person.domiciliation': 'Domiciliation',
+    'person.importRib': '📎 Importer un RIB (PDF/image)',
+    'person.extracting': "Lecture du RIB par l'IA…",
+    'person.extractOk': 'RIB lu ✔',
+    'person.save': 'Enregistrer',
+    'person.needName': 'Indique au moins le titulaire.',
+    'person.edit': 'Modifier',
+    'person.del': 'Supprimer',
+    'ndf.legendTitle': "Code couleur des lignes (fiabilité de l'IA)",
+    'ndf.confHaute': 'Confiance élevée',
+    'ndf.confMoyenne': 'Confiance moyenne — à vérifier',
+    'ndf.confBasse': 'Confiance faible — à vérifier absolument',
     'tabs.back': '← Événements',
     'tabs.documents': 'Documents',
     'tabs.analyse': 'Analyse',
@@ -132,6 +162,36 @@ const I18N = {
     'theme': '🌓 Tema',
     'credit': 'Desarrollado por',
     'repo': 'Código fuente',
+    'tabs.personnes': 'Personas',
+    'personnes.title': 'Base de personas',
+    'personnes.sub': 'Personas que adelantan los gastos y sus datos bancarios (RIB).',
+    'personnes.add': '+ Añadir una persona',
+    'personnes.empty': 'No hay personas registradas. Añade una.',
+    'personnes.confirmDel': '¿Eliminar « {x} » de la base?',
+    'personnes.deleted': 'Persona eliminada',
+    'personnes.saved': 'Persona guardada ✔',
+    'form.choosePerson': '— Elegir una persona —',
+    'form.addPerson': '+ Persona',
+    'form.needPerson': 'Elige (o añade) la persona que pagó.',
+    'person.addTitle': 'Añadir una persona',
+    'person.editTitle': 'Editar la persona',
+    'person.sub': 'Rellena los campos manualmente, o importa un RIB y deja que la IA los rellene.',
+    'person.titulaire': 'Titular de la cuenta',
+    'person.iban': 'IBAN',
+    'person.bic': 'BIC / SWIFT',
+    'person.banque': 'Banco',
+    'person.domiciliation': 'Domiciliación',
+    'person.importRib': '📎 Importar un RIB (PDF/imagen)',
+    'person.extracting': 'Leyendo el RIB con la IA…',
+    'person.extractOk': 'RIB leído ✔',
+    'person.save': 'Guardar',
+    'person.needName': 'Indica al menos el titular.',
+    'person.edit': 'Editar',
+    'person.del': 'Eliminar',
+    'ndf.legendTitle': 'Código de color de las líneas (fiabilidad de la IA)',
+    'ndf.confHaute': 'Confianza alta',
+    'ndf.confMoyenne': 'Confianza media — revisar',
+    'ndf.confBasse': 'Confianza baja — revisar sin falta',
     'tabs.back': '← Eventos',
     'tabs.documents': 'Documentos',
     'tabs.analyse': 'Análisis',
@@ -247,6 +307,36 @@ const I18N = {
     'theme': '🌓 Theme',
     'credit': 'Developed by',
     'repo': 'Source code',
+    'tabs.personnes': 'People',
+    'personnes.title': 'People database',
+    'personnes.sub': 'People who advance the expenses and their bank details (RIB).',
+    'personnes.add': '+ Add a person',
+    'personnes.empty': 'No people saved yet. Add one.',
+    'personnes.confirmDel': 'Remove “{x}” from the database?',
+    'personnes.deleted': 'Person deleted',
+    'personnes.saved': 'Person saved ✔',
+    'form.choosePerson': '— Choose a person —',
+    'form.addPerson': '+ Person',
+    'form.needPerson': 'Choose (or add) the person who paid.',
+    'person.addTitle': 'Add a person',
+    'person.editTitle': 'Edit person',
+    'person.sub': 'Fill the fields manually, or import a RIB and let the AI fill them.',
+    'person.titulaire': 'Account holder',
+    'person.iban': 'IBAN',
+    'person.bic': 'BIC / SWIFT',
+    'person.banque': 'Bank',
+    'person.domiciliation': 'Branch',
+    'person.importRib': '📎 Import a RIB (PDF/image)',
+    'person.extracting': 'Reading the RIB with AI…',
+    'person.extractOk': 'RIB read ✔',
+    'person.save': 'Save',
+    'person.needName': 'Enter at least the account holder.',
+    'person.edit': 'Edit',
+    'person.del': 'Delete',
+    'ndf.legendTitle': 'Row colour code (AI confidence)',
+    'ndf.confHaute': 'High confidence',
+    'ndf.confMoyenne': 'Medium confidence — check',
+    'ndf.confBasse': 'Low confidence — must check',
     'tabs.back': '← Events',
     'tabs.documents': 'Documents',
     'tabs.analyse': 'Analysis',
@@ -354,6 +444,10 @@ const I18N = {
 // Contenido de "How to use" por pestaña e idioma (HTML).
 const AYUDA = {
   fr: {
+    personnes: { titulo: 'Personnes', cuerpo: `
+      <p>La base des personnes qui avancent les dépenses (souvent le président ou le trésorier). On y stocke leurs <b>coordonnées bancaires (RIB)</b>.</p>
+      <p>Ajoute une personne avec <b>« + Ajouter une personne »</b> : saisis les champs à la main, ou <b>importe un RIB</b> (PDF/image) et l'IA les remplit. Tu peux tout <b>modifier</b> à tout moment.</p>
+      <p>À la création d'un événement, tu choisis la personne dans la liste : son <b>IBAN</b> se met automatiquement dans la note. Si elle n'existe pas encore, ajoute-la depuis la fenêtre de création.</p>` },
     eventos: { titulo: 'Événements', cuerpo: `
       <p>Page d'accueil. Chaque <b>événement</b> correspond à une <b>Note de Frais</b>.</p>
       <h4>Créer</h4>
@@ -374,6 +468,10 @@ const AYUDA = {
       <p>En haut : l'<b>état</b> de l'événement, le bouton <b>payé / non payé</b> et le <b>budget restant</b>.</p>` },
   },
   es: {
+    personnes: { titulo: 'Personas', cuerpo: `
+      <p>La base de personas que adelantan los gastos (a menudo el presidente o el tesorero). Guarda sus <b>datos bancarios (RIB)</b>.</p>
+      <p>Añade una persona con <b>« + Añadir una persona »</b>: rellena los campos a mano, o <b>importa un RIB</b> (PDF/imagen) y la IA los rellena. Puedes <b>editar</b> todo en cualquier momento.</p>
+      <p>Al crear un evento, eliges la persona de la lista: su <b>IBAN</b> se pone automáticamente en la nota. Si aún no existe, créala desde la ventana de creación.</p>` },
     eventos: { titulo: 'Eventos', cuerpo: `
       <p>Página inicial. Cada <b>evento</b> es una <b>Nota de Gastos</b>.</p>
       <h4>Crear</h4>
@@ -394,6 +492,10 @@ const AYUDA = {
       <p>Arriba: el <b>estado</b> del evento, el botón <b>pagado / no pagado</b> y el <b>presupuesto restante</b>.</p>` },
   },
   en: {
+    personnes: { titulo: 'People', cuerpo: `
+      <p>The database of people who advance the expenses (often the president or treasurer). It stores their <b>bank details (RIB)</b>.</p>
+      <p>Add a person with <b>“+ Add a person”</b>: fill the fields manually, or <b>import a RIB</b> (PDF/image) and the AI fills them. You can <b>edit</b> everything anytime.</p>
+      <p>When creating an event, you pick the person from the list: their <b>IBAN</b> is placed automatically in the report. If they don't exist yet, add them from the creation window.</p>` },
     eventos: { titulo: 'Events', cuerpo: `
       <p>Home page. Each <b>event</b> is one <b>Expense Report</b>.</p>
       <h4>Create</h4>

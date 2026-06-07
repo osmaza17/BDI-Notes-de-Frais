@@ -70,16 +70,22 @@ h1, h2, h3 { font-family: var(--serif); font-weight: 700; }
 a { color: var(--azul2); }
 
 /* ---------- CABECERA ---------- */
+/* Banner superior fijo (header + pestañas) */
+#topbar { position: sticky; top: 0; z-index: 50; }
+
 header.app {
   background: linear-gradient(135deg, var(--header-a), var(--header-b));
-  color: var(--header-text); padding: 14px 22px; display: flex;
-  align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px;
+  color: var(--header-text); padding: 12px 22px; display: flex;
+  align-items: center; gap: 14px;
   box-shadow: var(--sombra);
 }
+header.app .app-logo { height: 46px; width: auto; flex: none; background: #fff; border-radius: 8px; padding: 4px; }
+header.app .app-titulos { display: flex; flex-direction: column; }
 header.app h1 { font-size: 20px; margin: 0; letter-spacing: .3px; }
 header.app .sub { font-size: 12px; opacity: .85; }
 header.app #evento-activo { font-size: 12px; opacity: .95; font-weight: 600; margin-top: 2px; }
 .barra-acciones { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+header.app .barra-acciones { margin-left: auto; }
 
 /* ---------- INDICADOR DE ESTADO DEL SERVIDOR ---------- */
 .estado-servidor {
@@ -166,7 +172,7 @@ h2 .btn-howto { font-size: 12px; margin-left: 10px; padding: 4px 11px; }
   font-weight: 600; border-radius: 999px; padding: 7px 14px;
 }
 .toggle-paye.si { background: var(--verde-claro); color: var(--verde); border-color: var(--verde); }
-.budget-info { font-size: 13px; font-weight: 600; margin-left: auto; }
+.budget-info { font-size: 13px; font-weight: 600; margin-top: 10px; }
 .budget-info.ok { color: var(--verde); }
 .budget-info.over { color: var(--rojo); }
 .budget-info.none { color: var(--gris); font-weight: 400; }
@@ -206,6 +212,30 @@ h2 .btn-howto { font-size: 12px; margin-left: 10px; padding: 4px 11px; }
   border: none; font-size: 18px; cursor: pointer; padding: 4px 8px;
 }
 .modal-cerrar:hover { background: rgba(127,127,127,.18); border-radius: 6px; }
+
+/* Error de validación dentro del modal (visible, no en el fondo) */
+.modal-error { color: var(--rojo); background: var(--rojo-claro); border: 1px solid var(--rojo);
+  border-radius: 6px; padding: 0; margin-top: 12px; font-size: 13px; font-weight: 600; min-height: 0;
+  transition: padding .1s; }
+.modal-error:not(:empty) { padding: 8px 10px; }
+
+/* Fila con select + botón en línea (modal de creación) */
+.fila-inline { display: flex; gap: 8px; align-items: center; }
+.fila-inline select { flex: 1; }
+.fila-inline button { flex: none; white-space: nowrap; }
+
+/* Filas de la base de personas */
+.personne-row {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 12px 14px; border: 1px solid var(--borde); border-radius: 10px;
+  background: var(--panel); margin-bottom: 10px;
+}
+.personne-row .personne-nom { font-weight: 700; }
+.personne-row .personne-iban { font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 12.5px; }
+.personne-row .personne-extra { font-size: 12px; }
+
+/* Separación de la barra de búsqueda de eventos */
+.barra-busqueda { gap: 12px; margin-bottom: 16px; align-items: center; }
 
 /* ---------- Visor de documentos (popup) ---------- */
 .modal-doc-caja {
@@ -389,16 +419,27 @@ button.grande { font-size: 15px; padding: 12px 20px; }
 }
 @media (max-width: 760px) { .analyse-split { grid-template-columns: 1fr; } .analyse-split .orig { border-right: 0; border-bottom: 1px solid var(--borde); } }
 
-/* ---------- LAYOUT NOTE DE FRAIS (observaciones | hoja), centrado ---------- */
-.ndf-layout { display: flex; gap: 26px; align-items: flex-start; justify-content: center; }
-.ndf-observations {
-  flex: 0 0 460px; position: sticky; top: 16px; max-height: calc(100vh - 40px); overflow: auto;
-  background: var(--panel); border: 1px solid var(--borde); border-radius: 10px;
-  padding: 18px; box-shadow: var(--sombra);
-}
-.ndf-observations h3 { margin: 0 0 6px; font-size: 17px; }
+/* ---------- LAYOUT NOTE DE FRAIS (2 columnas) ---------- */
+.ndf-layout { display: flex; gap: 24px; align-items: flex-start; }
+/* Columna izquierda: cartas (estado/budget · observaciones · orden), tamaño justo, SIN scroll interno */
+.ndf-col-izq { flex: 0 0 400px; display: flex; flex-direction: column; gap: 18px; }
+.ndf-col-izq .panel { margin-bottom: 0; }
+.ndf-col-izq h3 { margin: 0 0 6px; font-size: 16px; }
+.card-statut .ndf-control { margin-top: 0; }
+/* Columna derecha: leyenda + preview */
+.ndf-col-der { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 14px; align-items: center; }
 .ndf-hoja-wrap { flex: 0 0 auto; }
-@media (max-width: 1300px) { .ndf-layout { flex-direction: column; align-items: center; } .ndf-observations { position: static; flex: none; width: 100%; max-width: 800px; } }
+@media (max-width: 1200px) { .ndf-layout { flex-direction: column; } .ndf-col-izq { flex: none; width: 100%; } }
+
+/* Leyenda de colores de fiabilidad */
+.legende { width: 210mm; max-width: 100%; font-size: 12.5px; }
+.legende b { display: block; margin-bottom: 6px; }
+.legende ul { list-style: none; margin: 0; padding: 0; display: flex; gap: 18px; flex-wrap: wrap; }
+.legende li { display: flex; align-items: center; gap: 6px; }
+.legende .leg-box { width: 16px; height: 16px; border-radius: 3px; flex: none; background: #fff; }
+.legende .leg-box.haute { border: 2px solid var(--verde); }
+.legende .leg-box.moyenne { border: 2px solid var(--ambar); }
+.legende .leg-box.basse { border: 2px solid var(--rojo); }
 
 /* Observaciones estructuradas (lista numerada editable) */
 .obs-item {
@@ -421,9 +462,8 @@ button.grande { font-size: 15px; padding: 12px 20px; }
   border-radius: 6px; padding: 6px 9px; margin-top: 6px; font-size: 12px; font-weight: 600;
 }
 
-/* Botón "Add new line" en la parte superior de la tabla */
-/* Barra de acciones de la hoja (no se imprime) */
-.ndf-toolbar { text-align: right; margin-bottom: 10px; }
+/* Botón "Add new line" en la esquina superior derecha, junto a la hoja */
+.ndf-toolbar { width: 210mm; max-width: 100%; text-align: right; margin-bottom: 8px; }
 .ndf-toolbar .btn-add-ligne {
   background: var(--verde); color: #fff; border: none; border-radius: 6px;
   padding: 8px 14px; font-size: 13px; font-weight: 700; cursor: pointer;
@@ -548,10 +588,15 @@ button.grande { font-size: 15px; padding: 12px 20px; }
 #hoja-ndf .btn-firma:hover { filter: brightness(1.1); }
 #hoja-ndf .ndf-sign tr.firma td { position: relative; }
 
-/* Tinte de confianza de la IA por fila (no se imprime fuerte) */
-#hoja-ndf .ndf-tabla tr.conf-haute  td.art, #hoja-ndf .ndf-tabla tr.conf-haute  td.prix { background: rgba(47,109,79,.07); }
-#hoja-ndf .ndf-tabla tr.conf-moyenne td.art, #hoja-ndf .ndf-tabla tr.conf-moyenne td.prix { background: rgba(148,101,20,.12); }
-#hoja-ndf .ndf-tabla tr.conf-basse  td.art, #hoja-ndf .ndf-tabla tr.conf-basse  td.prix { background: rgba(178,58,58,.14); }
+/* Confianza de la IA: REBORDE superpuesto en las celdas (sin sombrear el fondo) */
+#hoja-ndf .ndf-tabla td.art, #hoja-ndf .ndf-tabla td.prix { position: relative; }
+#hoja-ndf .ndf-tabla tr[class*="conf-"] td.art::after,
+#hoja-ndf .ndf-tabla tr[class*="conf-"] td.prix::after {
+  content: ""; position: absolute; inset: 0; pointer-events: none; border-radius: 2px;
+}
+#hoja-ndf .ndf-tabla tr.conf-haute  td.art::after, #hoja-ndf .ndf-tabla tr.conf-haute  td.prix::after { box-shadow: inset 0 0 0 2px var(--verde); }
+#hoja-ndf .ndf-tabla tr.conf-moyenne td.art::after, #hoja-ndf .ndf-tabla tr.conf-moyenne td.prix::after { box-shadow: inset 0 0 0 2px var(--ambar); }
+#hoja-ndf .ndf-tabla tr.conf-basse  td.art::after, #hoja-ndf .ndf-tabla tr.conf-basse  td.prix::after { box-shadow: inset 0 0 0 2px var(--rojo); }
 
 /* Bordes tenues para identificar los campos editables de la hoja */
 #hoja-ndf input.val, #hoja-ndf input.adr,
@@ -562,9 +607,7 @@ button.grande { font-size: 15px; padding: 12px 20px; }
 
 /* Durante la exportación a PDF (html2canvas): hoja limpia, sin ayudas visuales */
 #hoja-ndf.exportando .no-print { display: none !important; }
-#hoja-ndf.exportando .ndf-tabla tr.conf-haute td,
-#hoja-ndf.exportando .ndf-tabla tr.conf-moyenne td,
-#hoja-ndf.exportando .ndf-tabla tr.conf-basse td { background: #fff !important; }
+#hoja-ndf.exportando .ndf-tabla td.art::after, #hoja-ndf.exportando .ndf-tabla td.prix::after { box-shadow: none !important; }
 #hoja-ndf.exportando input.val, #hoja-ndf.exportando input.adr,
 #hoja-ndf.exportando .ndf-tabla input, #hoja-ndf.exportando .ndf-tabla td.art .ed,
 #hoja-ndf.exportando .ndf-tabla td.prix .num { border-color: transparent !important; }

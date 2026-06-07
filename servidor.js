@@ -29,6 +29,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DIR_DOSSIERS = path.join(__dirname, 'Dossiers');
 const DIR_WEB = path.join(__dirname, 'web');
 const DIR_FIRMAS = path.join(__dirname, 'Signatures');
+const RUTA_PERSONAS = path.join(__dirname, 'personnes.json');
 
 const PORT = process.env.PORT || 4317;
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
@@ -144,6 +145,19 @@ const ESQUEMA_SOLO = {
   properties: { lignes: { type: 'array', items: ESQUEMA_LIGNE }, observations: ESQUEMA_OBS },
 };
 
+// Datos bancarios extraídos de un RIB.
+const ESQUEMA_RIB = {
+  type: 'object', additionalProperties: false,
+  required: ['titulaire', 'iban', 'bic', 'banque', 'domiciliation'],
+  properties: {
+    titulaire: { type: 'string', description: 'Nom complet du titulaire du compte.' },
+    iban: { type: 'string', description: "IBAN (avec espaces tels qu'imprimés ou regroupés)." },
+    bic: { type: 'string', description: 'Code BIC / SWIFT. Vide si absent.' },
+    banque: { type: 'string', description: "Nom de la banque. Vide si absent." },
+    domiciliation: { type: 'string', description: "Agence / domiciliation. Vide si absent." },
+  },
+};
+
 const SYSTEM_PROMPT = `Tu es l'assistant comptable du Bureau de l'International (BDI) de CentraleSupélec.
 On te fournit les pièces justificatives (factures, tickets de caisse, attestations sur l'honneur) d'une section pour un événement. Tu prépares les lignes d'une "Note de Frais" (NDF) qui servira au remboursement de la section par le BDI.
 
@@ -201,6 +215,22 @@ async function estructurarDesdeTextos(ev, ocr) {
   return { lignes: r.lignes || [], observations: r.observations || [] };
 }
 
+// Extrae los datos bancarios de un RIB (PDF o imagen, base64).
+async function extraerRIB(nombre, contenidoBase64) {
+  const ext = path.extname(nombre).toLowerCase();
+  const mime = MIME_POR_EXT[ext] || 'application/pdf';
+  const bloque = mime.startsWith('image/')
+    ? { type: 'image', source: { type: 'base64', media_type: mime, data: contenidoBase64 } }
+    : { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: contenidoBase64 } };
+  const resp = await anthropic.messages.create({
+    model: MODELO_CLAUDE, max_tokens: 1500,
+    system: "Tu lis un RIB (relevé d'identité bancaire) et tu en extrais les informations. Sois fidèle ; laisse vide ce qui est absent.",
+    output_config: outputConfig(ESQUEMA_RIB),
+    messages: [{ role: 'user', content: [{ type: 'text', text: "Extrais les informations bancaires de ce RIB." }, bloque] }],
+  });
+  return JSON.parse(textoRespuesta(resp));
+}
+
 function construirDatos(ev, extraido) {
   const seccion = ev.section || '';
   const annee = (ev.date && ev.date.slice(0, 4)) || String(new Date().getFullYear());
@@ -230,7 +260,7 @@ app.use(express.json({ limit: '120mb' }));
 app.use(express.static(DIR_WEB));
 
 app.use('/api', (req, res, next) => {
-  if (req.path.includes('analizar') || req.path.includes('regenerar')) {
+  if (req.path.includes('analizar') || req.path.includes('regenerar') || req.path.includes('extraire')) {
     if (!ANTHROPIC_API_KEY) {
       return res.status(500).json({ error: 'Falta ANTHROPIC_API_KEY. Copia .env.example como .env y rellénala.' });
     }
@@ -449,6 +479,56 @@ app.put('/api/eventos/:id/datos', async (req, res) => {
   ev.datos = req.body || {};
   await guardarEvento(id, ev);
   res.json({ ok: true });
+});
+
+// ---------- Personas (base de datos de RIB en personnes.json) ----------
+async function leerPersonas() { return (await leerJSON(RUTA_PERSONAS, [])) || []; }
+async function guardarPersonas(lista) { await escribirJSON(RUTA_PERSONAS, lista); }
+const pid = () => 'p' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+
+app.get('/api/personnes', async (req, res) => res.json(await leerPersonas()));
+
+app.post('/api/personnes', async (req, res) => {
+  const b = req.body || {};
+  const nom = (b.nom || b.titulaire || '').trim();
+  if (!nom) return res.status(400).json({ error: 'Falta el nombre.' });
+  const lista = await leerPersonas();
+  const p = {
+    id: pid(), nom,
+    titulaire: (b.titulaire || nom).trim(),
+    iban: (b.iban || '').trim(), bic: (b.bic || '').trim(),
+    banque: (b.banque || '').trim(), domiciliation: (b.domiciliation || '').trim(),
+    creado: Date.now(),
+  };
+  lista.push(p);
+  await guardarPersonas(lista);
+  res.json(p);
+});
+
+app.put('/api/personnes/:pid', async (req, res) => {
+  const lista = await leerPersonas();
+  const p = lista.find((x) => x.id === req.params.pid);
+  if (!p) return res.status(404).json({ error: 'Persona no encontrada.' });
+  const b = req.body || {};
+  for (const k of ['nom', 'titulaire', 'iban', 'bic', 'banque', 'domiciliation']) if (k in b) p[k] = (b[k] || '').trim();
+  if (!p.nom) p.nom = p.titulaire || p.nom;
+  await guardarPersonas(lista);
+  res.json(p);
+});
+
+app.delete('/api/personnes/:pid', async (req, res) => {
+  let lista = await leerPersonas();
+  lista = lista.filter((x) => x.id !== req.params.pid);
+  await guardarPersonas(lista);
+  res.json({ ok: true });
+});
+
+// Extrae datos bancarios de un RIB (no guarda; el cliente revisa y confirma).
+app.post('/api/personnes/extraire', async (req, res) => {
+  const { nombre, contenidoBase64 } = req.body || {};
+  if (!nombre || !contenidoBase64) return res.status(400).json({ error: 'Falta el archivo del RIB.' });
+  try { res.json(await extraerRIB(nombre, contenidoBase64)); }
+  catch (e) { console.error('Error RIB:', e); res.status(500).json({ error: e.message }); }
 });
 
 // ---------- Firmas (carpeta /Signatures, compartida) ----------
