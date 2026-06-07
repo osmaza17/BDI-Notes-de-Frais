@@ -175,9 +175,10 @@ $('#btn-crear').addEventListener('click', async () => {
   const membre = $('#nuevo-membre').value.trim();
   const date = $('#nuevo-date').value;
   const budget = $('#nuevo-budget').value;
+  const iban = $('#nuevo-iban').value.trim();
   if (!nom || !section) return toast(t('form.needNameSection'), true);
-  const ev = await api('/eventos', { method: 'POST', body: JSON.stringify({ nom, section, membre, date, budget }) });
-  $('#nuevo-nom').value = $('#nuevo-membre').value = $('#nuevo-date').value = $('#nuevo-budget').value = '';
+  const ev = await api('/eventos', { method: 'POST', body: JSON.stringify({ nom, section, membre, date, budget, iban }) });
+  $('#nuevo-nom').value = $('#nuevo-membre').value = $('#nuevo-date').value = $('#nuevo-budget').value = $('#nuevo-iban').value = '';
   $('#nuevo-section').selectedIndex = 0;
   cerrarCrear(); toast(t('event.created'));
   await cargarEventos(); await abrirEvento(ev.id);
@@ -214,13 +215,14 @@ function renderDocumentos() {
 
 function tarjetaDoc(nom, conAcciones) {
   const tipo = /attest/i.test(nom) ? 'attestation' : /fact/i.test(nom) ? 'facture' : '';
+  const huerfano = documentosHuerfanos(datos()).includes(nom);
   const card = document.createElement('div');
-  card.className = 'doc-card';
+  card.className = 'doc-card' + (huerfano ? ' huerfano' : '');
   card.title = t('docs.clickAnalyse');
   card.innerHTML = `
     <div class="thumb"></div>
     <div class="pie">
-      ${tipo ? `<span class="badge ${tipo}">${tipo}</span>` : ''}
+      ${huerfano ? `<span class="badge huerfano">${t('docs.orphanBadge')}</span>` : (tipo ? `<span class="badge ${tipo}">${tipo}</span>` : '')}
       <div class="nombre" ${conAcciones ? 'contenteditable="true"' : ''} spellcheck="false" title="${t('docs.clickRename')}">${escapar(nom)}</div>
       ${conAcciones ? `<div class="acciones">
         <button class="sec peque btn-voir">${t('docs.view')}</button>
@@ -312,7 +314,12 @@ async function subirArchivos(files) {
   for (const file of files) {
     try {
       const contenidoBase64 = await leerArchivoBase64(file);
-      await api(`/eventos/${estado.activo.id}/archivos`, { method: 'POST', body: JSON.stringify({ nombre: file.name, contenidoBase64 }) });
+      const resp = await fetch(`/api/eventos/${estado.activo.id}/archivos`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ nombre: file.name, contenidoBase64 }),
+      });
+      if (resp.status === 409) { const j = await resp.json().catch(() => ({})); toast(t('docs.duplicate', { x: j.duplicado || '?' }), true); continue; }
+      if (!resp.ok) throw new Error((await resp.json().catch(() => ({}))).error || resp.status);
     } catch (e) { toast(`Erreur ${file.name}: ${e.message}`, true); }
   }
   fileInput.value = '';
@@ -440,7 +447,22 @@ function renderNDF() {
 
   renderObservations(d);
   renderOrdre(d);
+  renderHuerfanos(d);
   paginarHoja(d);
+}
+
+// Documentos subidos que no aparecen en ninguna línea (fichier_source).
+function documentosHuerfanos(d) {
+  if (!d || !Array.isArray(d.lignes)) return [];
+  const usados = new Set((d.lignes || []).map((l) => l.fichier_source).filter(Boolean));
+  return (estado.activo?.archivos || []).filter((n) => !usados.has(n));
+}
+function renderHuerfanos(d) {
+  const box = $('#aviso-orphelins'); if (!box) return;
+  const orf = documentosHuerfanos(d);
+  if (!orf.length) { box.style.display = 'none'; box.innerHTML = ''; return; }
+  box.style.display = '';
+  box.innerHTML = `<b>${escapar(t('docs.orphanTitle'))}</b><ul>${orf.map((n) => `<li>${escapar(n)}</li>`).join('')}</ul>`;
 }
 
 function pintarPaye() {
@@ -528,6 +550,9 @@ function htmlMeta(d) {
         <span class="lbl">Nom du membre ayant engagé les dépenses :</span>
         <input class="val" data-campo="nom_membre" value="${escapar(d.nom_membre || '')}" />
         <div class="aviso-nom no-print" id="aviso-nom"></div>
+        <span class="lbl" style="display:block;margin-top:2mm">IBAN abonné :</span>
+        <input class="val" data-campo="iban" value="${escapar(d.iban || '')}" style="width:100%" />
+        <div class="aviso-nom no-print" id="aviso-iban"></div>
       </div>
       <div>
         <span class="lbl">Nom de l'asso mère (+ section) et adresse du siège social</span>
@@ -601,7 +626,12 @@ function paginarHoja(d) {
 
 function conectarHoja(d) {
   $$('#hoja-ndf input[data-campo]').forEach((inp) => {
-    inp.addEventListener('input', () => { d[inp.dataset.campo] = inp.value; if (inp.dataset.campo === 'nom_membre') comprobarNom(inp.value); autoguardarDatos(); });
+    inp.addEventListener('input', () => {
+      d[inp.dataset.campo] = inp.value;
+      if (inp.dataset.campo === 'nom_membre') comprobarNom(inp.value);
+      if (inp.dataset.campo === 'iban') { const av = $('#aviso-iban'); if (av && inp.value.trim()) { av.textContent = ''; av.style.display = 'none'; } }
+      autoguardarDatos();
+    });
   });
   const btnAdd = $('#btn-add-ligne');
   if (btnAdd) btnAdd.addEventListener('click', () => { (d.lignes ||= []).push({ article: '', date_achat: '', prix_ht: 0, taux_tva: '0%', montant_ttc: 0, fichier_source: '', confiance: 'haute' }); paginarHoja(d); autoguardarDatos(); });
@@ -682,6 +712,15 @@ function aplicarFirma(nom) {
 $('#btn-pdf').addEventListener('click', generarPDF);
 async function generarPDF() {
   const d = datos(); if (!d) return;
+  // IBAN obligatorio antes de generar el PDF.
+  if (!(d.iban || '').trim()) {
+    const av = $('#aviso-iban');
+    if (av) { av.textContent = t('ndf.ibanMissing'); av.style.display = 'block'; }
+    const inp = $('#hoja-ndf input[data-campo="iban"]');
+    if (inp) { inp.focus(); inp.scrollIntoView({ behavior: 'smooth', block: 'center' }); }
+    toast(t('ndf.ibanMissing'), true);
+    return;
+  }
   const btn = $('#btn-pdf'); btn.disabled = true; btn.textContent = t('ndf.pdfGen');
   const hoja = $('#hoja-ndf');
   try {

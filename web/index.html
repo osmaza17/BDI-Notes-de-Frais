@@ -140,6 +140,7 @@
 
         <div class="ndf-layout">
           <aside class="ndf-observations no-print">
+            <div id="aviso-orphelins" class="aviso-orphelins" style="display:none"></div>
             <h3 data-i18n="ndf.obsTitle">Observations de l'IA</h3>
             <p class="muted" data-i18n="ndf.obsSub">Remarques de l'analyse (non imprimées sur la NDF).</p>
             <div id="obs-lista"></div>
@@ -211,6 +212,12 @@
         <div class="campo">
           <label data-i18n="form.member">Membre ayant engagé les dépenses</label>
           <input id="nuevo-membre" data-i18n-ph="form.memberPh" placeholder="ex : Óscar MARTÍNEZ ZAMORA" />
+        </div>
+      </div>
+      <div class="fila" style="margin-top:10px">
+        <div class="campo">
+          <label data-i18n="form.iban">IBAN abonné (optionnel)</label>
+          <input id="nuevo-iban" data-i18n-ph="form.ibanPh" placeholder="ex : FR76 3000 4000 0500 0012 3456 789" />
         </div>
       </div>
       <div style="text-align:right; margin-top:16px">

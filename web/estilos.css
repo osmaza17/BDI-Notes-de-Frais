@@ -324,6 +324,15 @@ textarea { resize: vertical; min-height: 60px; }
 }
 .badge.facture { background: var(--verde-claro); color: var(--verde); }
 .badge.attestation { background: var(--ambar-claro); color: var(--ambar); }
+.badge.huerfano { background: var(--rojo-claro); color: var(--rojo); }
+.doc-card.huerfano { border-color: var(--rojo); }
+
+/* Aviso de documentos huérfanos (panel de la NDF, no se imprime) */
+.aviso-orphelins {
+  background: var(--rojo-claro); color: var(--rojo); border: 1px solid var(--rojo);
+  border-radius: 8px; padding: 10px 12px; font-size: 12.5px; margin-bottom: 14px;
+}
+.aviso-orphelins ul { margin: 6px 0 0; padding-left: 18px; }
 
 /* ---------- PESTAÑA: botón volver ---------- */
 nav.tabs .tab-volver { background: rgba(255,255,255,.14); color: #fff; opacity: 1; font-weight: 600; }

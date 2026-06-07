@@ -22,6 +22,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { PDFDocument } from 'pdf-lib';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -209,6 +210,7 @@ function construirDatos(ev, extraido) {
     numero_ndf: `NDF_${nomGuiones}_${annee}`,
     date_emission: new Date().toLocaleDateString('fr-FR'),
     nom_membre: ev.membre || '',
+    iban: ev.iban || '',
     section: seccion,
     asso: `Bureau de l'International (${seccion})`,
     adresse: ADRESSE_BDI,
@@ -257,6 +259,7 @@ app.post('/api/cerrar', (req, res) => {
 function vista(ev, archivos) {
   return {
     id: ev.id, nom: ev.nom, section: ev.section, membre: ev.membre, date: ev.date,
+    iban: ev.iban || '',
     budget: ev.budget ?? null, estado: ev.estado || 'brouillon', paye: !!ev.paye,
     creado: ev.creado, archivos, datos: ev.datos || null, ocr: ev.ocr || {},
   };
@@ -279,7 +282,7 @@ app.get('/api/eventos', async (req, res) => {
 });
 
 app.post('/api/eventos', async (req, res) => {
-  const { nom, section, membre, date, budget } = req.body || {};
+  const { nom, section, membre, date, budget, iban } = req.body || {};
   if (!nom || !section) return res.status(400).json({ error: "Faltan el nombre del evento o la section (pôle)." });
   const base = slug(`${section}_${nom}`);
   let id = base, n = 1;
@@ -287,7 +290,7 @@ app.post('/api/eventos', async (req, res) => {
   await fs.mkdir(rutaDocs(id), { recursive: true });
   const ev = {
     id, nom: nom.trim(), section: section.trim(), membre: (membre || '').trim(),
-    date: (date || '').trim(),
+    date: (date || '').trim(), iban: (iban || '').trim(),
     budget: (budget === '' || budget == null) ? null : Number(budget),
     estado: 'brouillon', paye: false,
     creado: Date.now(), ocr: {}, datos: null,
@@ -315,6 +318,7 @@ app.put('/api/eventos/:id', async (req, res) => {
   if ('paye' in b) ev.paye = !!b.paye;
   if ('budget' in b) ev.budget = (b.budget === '' || b.budget == null) ? null : Number(b.budget);
   if ('membre' in b) ev.membre = b.membre;
+  if ('iban' in b) ev.iban = (b.iban || '').trim();
   await guardarEvento(id, ev);
   res.json(vista(ev, await listarArchivos(id)));
 });
@@ -332,8 +336,19 @@ app.post('/api/eventos/:id/archivos', async (req, res) => {
   const { nombre, contenidoBase64 } = req.body || {};
   if (!nombre || !contenidoBase64) return res.status(400).json({ error: 'Falta nombre o contenido.' });
   await fs.mkdir(rutaDocs(id), { recursive: true });
+  const buf = Buffer.from(contenidoBase64, 'base64');
+
+  // Detección de duplicados por hash: si ya existe un documento idéntico, se rechaza.
+  const hash = crypto.createHash('sha256').update(buf).digest('hex');
+  for (const existente of await listarArchivos(id)) {
+    const otro = await fs.readFile(path.join(rutaDocs(id), existente)).catch(() => null);
+    if (otro && crypto.createHash('sha256').update(otro).digest('hex') === hash) {
+      return res.status(409).json({ error: 'duplicado', duplicado: existente });
+    }
+  }
+
   const seguro = path.basename(nombre);
-  await fs.writeFile(path.join(rutaDocs(id), seguro), Buffer.from(contenidoBase64, 'base64'));
+  await fs.writeFile(path.join(rutaDocs(id), seguro), buf);
   res.json({ ok: true, nombre: seguro });
 });
 
@@ -390,6 +405,7 @@ app.post('/api/eventos/:id/analizar', async (req, res) => {
     // Conserva ajustes manuales que no dependen del análisis.
     ev.datos.signature = previo.signature || '';
     ev.datos.signature_membre = previo.signature_membre || '';
+    ev.datos.iban = previo.iban || ev.iban || '';
     ev.datos.ordre_pieces = archivos.slice(); // orden por defecto = orden actual
     await guardarEvento(id, ev);
     res.json({ datos: ev.datos, ocr: ev.ocr });
@@ -418,6 +434,7 @@ app.post('/api/eventos/:id/regenerar', async (req, res) => {
     ev.datos = construirDatos(ev, extraido);
     ev.datos.signature = previo.signature || '';
     ev.datos.signature_membre = previo.signature_membre || '';
+    ev.datos.iban = previo.iban || ev.iban || '';
     ev.datos.ordre_pieces = (previo.ordre_pieces && previo.ordre_pieces.length) ? previo.ordre_pieces : (await listarArchivos(id));
     await guardarEvento(id, ev);
     res.json({ datos: ev.datos, ocr: ev.ocr });

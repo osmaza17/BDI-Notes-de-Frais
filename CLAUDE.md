@@ -66,6 +66,11 @@ La salida estructurada (`output_config.format` json_schema) sí funciona en Haik
     Creación en **modal** abierto por el **FAB "+"**. (NO hay emoji — eliminado.)
   - **Análisis automático**: al subir/borrar docs se llama solo a `/analizar` (`lanzarAnalisis()`,
     cancelable por `estado.analisisToken`: resultado obsoleto se descarta; borrar un doc corta y relanza).
+  - **Duplicados**: al subir, el server calcula sha256 y rechaza (409) si ya existe un documento idéntico.
+  - **Huérfanos**: documentos subidos que no aparecen en ninguna `ligne.fichier_source` → aviso en la NDF
+    (`#aviso-orphelins`) y badge rojo en la tarjeta (`documentosHuerfanos()`).
+  - **IBAN del abonado** (`datos.iban`): opcional al crear el evento; editable en la NDF; **obligatorio
+    para generar el PDF** (`generarPDF()` bloquea si está vacío). Siempre en euros (no hay multidivisa).
   - **Autoguardado** (`autoguardarDatos` / `autoguardarOcr`, debounce) y `guardarMeta()` (estado, payé,
     budget). No hay botón de guardar; atajo **Ctrl+S** fuerza, **Ctrl+P** genera PDF, ←/→ navegan en Analyse.
   - **NDF paginada A4**: `paginarHoja()` reparte filas en varias `.ndf-page` midiendo la altura real de
@@ -83,6 +88,7 @@ La salida estructurada (`output_config.format` json_schema) sí funciona en Haik
 ```jsonc
 {
   "id", "nom", "section", "membre", "date", "creado",
+  "iban": "FR76…",          // IBAN del abonado (opcional al crear; obligatorio para el PDF)
   "budget": 300,            // presupuesto máx del BDI (número o null)
   "estado": "brouillon",    // brouillon|a_verifier|valide|envoye|rembourse
   "paye": false,            // pagado o no
@@ -92,6 +98,7 @@ La salida estructurada (`output_config.format` json_schema) sí funciona en Haik
     "date_emission", "nom_membre", "section", "asso", "adresse", "date_evenement",
     "lignes": [ { "article","date_achat","prix_ht","taux_tva","montant_ttc","fichier_source","confiance" } ],
     "observations": [ "remarque 1", ... ],   // array
+    "iban": "FR76…",                         // IBAN (espejo editable del de meta)
     "signature": "fichero.png",              // firma tesorero (en /Signatures)
     "signature_membre": "fichero.png",       // firma miembro
     "ordre_pieces": [ "ticket.jpeg", "facture.pdf" ]  // orden en el PDF final

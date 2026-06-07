@@ -41,17 +41,20 @@ Note de Frais permanece en francés (documento oficial). Cada pestaña tiene un 
 1. **Événements** (inicio) — los eventos aparecen **agrupados por año**; el **color** de la tarjeta
    indica su estado y un distintivo si está **pagado**. Hay **buscador** y **filtro por estado**. Pulsa
    el botón **« + »** (abajo a la derecha) para crear uno: nombre, **section (pôle)**, fecha, **miembro**
-   (apellido en MAYÚSCULAS) y **presupuesto máximo asignado por el BDI**.
+   (apellido en MAYÚSCULAS), **presupuesto máximo asignado por el BDI** e **IBAN del abonado** (opcional).
 2. **Documents** — arrastra las facturas/tickets/attestations **sobre la zona de tarjetas** (o con
    « + Ajouter des documents »). El **análisis se lanza automáticamente**: Claude lee, transcribe y
-   rellena la nota. Cada tarjeta: **Voir** (ventana), **Ouvrir** (pestaña), nombre editable.
+   rellena la nota. Cada tarjeta: **Voir** (ventana), **Ouvrir** (pestaña), nombre editable. Si subes
+   un documento **idéntico** a otro ya presente, se ignora (aviso de duplicado).
 3. **Analyse** — revisa lo que Claude ha leído: documento original a un lado, **texto transcrito
    (editable)** al otro. Corrige y pulsa **« Régénérer la note »**. Las flechas ←/→ navegan entre documentos.
-4. **Note de Frais** — formulario editable (**autoguardado**, totales automáticos, coma decimal). El
-   **fondo de color** de cada línea indica la confianza de la IA. Si la tabla crece, pasa a **varias
-   páginas A4**. Botones **firma del tesorero** y **firma del miembro**. Define el **orden de los
-   adjuntos** arrastrando las tarjetas. Arriba: **estado** del evento, botón **pagado/no pagado** y
-   **presupuesto restante**. Exporta a **Excel** o genera el **PDF final**.
+4. **Note de Frais** — formulario editable (**autoguardado**, totales automáticos, importes siempre en
+   **euros**, coma decimal). El **fondo de color** de cada línea indica la confianza de la IA. Si la
+   tabla crece, pasa a **varias páginas A4**. Incluye el **IBAN del abonado** (obligatorio antes de
+   generar el PDF). Botones **firma del tesorero** y **firma del miembro**. Define el **orden de los
+   adjuntos** arrastrando las tarjetas. Si algún documento **no se usa** en ninguna línea, aparece un
+   aviso. Arriba: **estado** del evento, botón **pagado/no pagado** y **presupuesto restante**. Exporta
+   a **Excel** o genera el **PDF final**.
 
 ### El PDF final
 
