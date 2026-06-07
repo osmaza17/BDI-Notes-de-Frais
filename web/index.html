@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="fr" data-theme="claro">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>BDI · Notes de Frais</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Libre+Baskerville:wght@400;700&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="estilos.css" />
+  <!-- pdf.js (miniaturas) + html2canvas (rasterizar la NDF para el PDF final) -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+</head>
+<body>
+  <header class="app no-print">
+    <div>
+      <h1>BDI · Notes de Frais</h1>
+      <div class="sub">Bureau de l'International — CentraleSupélec</div>
+      <div id="evento-activo" data-i18n="header.noEvent">Aucun événement sélectionné</div>
+    </div>
+    <div class="barra-acciones">
+      <span id="estado-servidor" class="estado-servidor desconectado">
+        <span class="punto"></span><span class="txt" data-i18n="server.connecting">Connexion…</span>
+      </span>
+      <select id="sel-idioma" class="sel-idioma" title="Language">
+        <option value="fr">🇫🇷 FR</option>
+        <option value="es">🇪🇸 ES</option>
+        <option value="en">🇬🇧 EN</option>
+      </select>
+      <button class="sec" id="btn-tema"><span data-i18n="theme">🌓 Thème</span></button>
+    </div>
+  </header>
+
+  <nav class="tabs no-print" id="tabs" style="display:none">
+    <button id="btn-volver" class="tab-volver" data-i18n="tabs.back">← Événements</button>
+    <button data-vista="documents" class="activa" data-i18n="tabs.documents">Documents</button>
+    <button data-vista="analyse" data-i18n="tabs.analyse">Analyse</button>
+    <button data-vista="ndf" data-i18n="tabs.ndf">Note de Frais</button>
+  </nav>
+
+  <main>
+    <!-- ============ HOME : LISTA DE EVENTOS ============ -->
+    <section class="vista activa" id="vista-eventos">
+      <div class="panel">
+        <div class="panel-head">
+          <h2 data-i18n="home.title">Événements</h2>
+          <button class="btn-howto" data-howto="eventos"><span data-i18n="howto.btn">❔ How to use</span></button>
+        </div>
+        <div class="fila" style="margin-bottom:14px">
+          <input id="buscar" class="buscar" data-i18n-ph="home.search" placeholder="🔎 Rechercher…" />
+          <select id="filtro-estado" class="filtro-estado">
+            <option value="" data-i18n="home.allStates">Tous les états</option>
+            <option value="brouillon" data-i18n="estado.brouillon">Brouillon</option>
+            <option value="a_verifier" data-i18n="estado.a_verifier">À vérifier</option>
+            <option value="valide" data-i18n="estado.valide">Validé</option>
+            <option value="envoye" data-i18n="estado.envoye">Envoyé</option>
+            <option value="rembourse" data-i18n="estado.rembourse">Remboursé</option>
+          </select>
+        </div>
+        <div id="grid-eventos" class="grid-anios"></div>
+      </div>
+    </section>
+
+    <!-- ============ DOCUMENTS ============ -->
+    <section class="vista" id="vista-documents">
+      <div class="panel">
+        <div class="panel-head">
+          <div>
+            <h2 style="margin:0" data-i18n="docs.title">Documents</h2>
+            <p class="muted" style="margin:4px 0 0" data-i18n="docs.sub">Glisse tes pièces : l'analyse se lance automatiquement.</p>
+          </div>
+          <div class="barra-acciones">
+            <span id="estado-analisis" class="muted"></span>
+            <button class="btn-howto" data-howto="documents"><span data-i18n="howto.btn">❔ How to use</span></button>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head">
+          <h3 style="margin:0"><span data-i18n="docs.list">Documents</span> (<span id="n-docs">0</span>)</h3>
+          <button class="sec" id="btn-add-docs" data-i18n="docs.add">+ Ajouter des documents</button>
+          <input type="file" id="file-input" multiple accept=".pdf,.jpg,.jpeg,.png,.webp,.gif" style="display:none" />
+        </div>
+        <div id="doc-cards" class="doc-cards dropzone-cards"></div>
+      </div>
+    </section>
+
+    <!-- ============ ANALYSE ============ -->
+    <section class="vista" id="vista-analyse">
+      <div class="panel">
+        <div class="panel-head">
+          <div>
+            <h2 style="margin:0" data-i18n="analyse.title">Texte extrait des documents</h2>
+            <p class="muted" style="margin:4px 0 0" data-i18n="analyse.sub">Corrige le texte si besoin, puis régénère la note.</p>
+          </div>
+          <div class="barra-acciones">
+            <button id="btn-regenerar" data-i18n="analyse.regen">↻ Régénérer la note</button>
+            <button class="btn-howto" data-howto="analyse"><span data-i18n="howto.btn">❔ How to use</span></button>
+          </div>
+        </div>
+        <div id="estado-regen" class="muted" style="margin-top:8px"></div>
+      </div>
+      <div id="analyse-lista"></div>
+    </section>
+
+    <!-- ============ NOTE DE FRAIS ============ -->
+    <section class="vista" id="vista-ndf">
+      <div class="panel no-print" id="ndf-sin-datos">
+        <p class="vacio" data-i18n="ndf.empty">Aucune donnée. Ajoute d'abord des documents.</p>
+      </div>
+
+      <div id="ndf-contenido" style="display:none">
+        <div class="panel no-print">
+          <div class="panel-head">
+            <h2 style="margin:0"><span data-i18n="ndf.title">Vérification &amp; édition</span>
+              <button class="btn-howto" data-howto="ndf"><span data-i18n="howto.btn">❔ How to use</span></button></h2>
+            <div class="barra-acciones">
+              <span class="muted autosave-ind" id="autosave-ind"></span>
+              <button class="sec" id="btn-excel" data-i18n="ndf.excel">⬇ Excel</button>
+              <button id="btn-pdf" data-i18n="ndf.pdf">📄 Générer le PDF</button>
+            </div>
+          </div>
+          <!-- Estado del evento + pagado + presupuesto -->
+          <div class="ndf-control">
+            <label class="ctrl"><span data-i18n="ndf.statut">Statut</span>
+              <select id="sel-estado">
+                <option value="brouillon" data-i18n="estado.brouillon">Brouillon</option>
+                <option value="a_verifier" data-i18n="estado.a_verifier">À vérifier</option>
+                <option value="valide" data-i18n="estado.valide">Validé</option>
+                <option value="envoye" data-i18n="estado.envoye">Envoyé</option>
+                <option value="rembourse" data-i18n="estado.rembourse">Remboursé</option>
+              </select>
+            </label>
+            <button id="btn-paye" class="toggle-paye">Non payé</button>
+            <span id="budget-info" class="budget-info"></span>
+          </div>
+        </div>
+
+        <div class="ndf-layout">
+          <aside class="ndf-observations no-print">
+            <h3 data-i18n="ndf.obsTitle">Observations de l'IA</h3>
+            <p class="muted" data-i18n="ndf.obsSub">Remarques de l'analyse (non imprimées sur la NDF).</p>
+            <div id="obs-lista"></div>
+            <button class="sec peque" id="btn-add-obs" style="margin-top:10px" data-i18n="ndf.addObs">+ Ajouter une remarque</button>
+
+            <h3 style="margin-top:22px" data-i18n="ndf.ordreTitle">Ordre des pièces jointes</h3>
+            <p class="muted" data-i18n="ndf.ordreSub">Glisse les cartes pour définir leur ordre.</p>
+            <div id="ordre-cards" class="ordre-cards"></div>
+          </aside>
+
+          <div class="ndf-hoja-wrap">
+            <div id="hoja-ndf"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- Botón flotante "+" para crear evento (solo en la home) -->
+  <button id="fab-crear" class="fab no-print" title="" data-i18n-title="home.newEvent">+</button>
+
+  <!-- Créditos (esquina inferior izquierda) -->
+  <div class="creditos no-print">
+    <a class="credito" href="https://www.linkedin.com/in/oscarmartinezzamora/" target="_blank" rel="noopener">
+      <span data-i18n="credit">Développé par</span> <b>Óscar Martínez Zamora</b>
+    </a>
+    <a id="link-repo" class="credito repo" href="#" target="_blank" rel="noopener">
+      <span data-i18n="repo">Code source</span>
+    </a>
+  </div>
+
+  <div id="toast"></div>
+
+  <!-- Modal: crear evento -->
+  <div id="modal-crear" class="modal no-print">
+    <div class="modal-caja">
+      <button class="modal-cerrar" id="crear-cerrar" title="Fermer">✕</button>
+      <h2 data-i18n="home.newEvent">Nouvel événement</h2>
+      <p class="muted" data-i18n="home.newEventSub">Chaque événement correspond à une Note de Frais.</p>
+      <div class="fila" style="margin-top:6px">
+        <div class="campo">
+          <label data-i18n="form.name">Nom de l'événement</label>
+          <input id="nuevo-nom" data-i18n-ph="form.namePh" placeholder="ex : World Week 2026" />
+        </div>
+        <div class="campo">
+          <label data-i18n="form.section">Section (pôle)</label>
+          <select id="nuevo-section">
+            <option value="" disabled selected data-i18n="form.choose">— Choisir —</option>
+            <option>Pôle Events</option>
+            <option>Pôle RelEnt</option>
+            <option>Pôle Trez</option>
+            <option>Pôle Soirée</option>
+            <option>Pôle Comm</option>
+            <option>Pôle Cohez</option>
+          </select>
+        </div>
+      </div>
+      <div class="fila" style="margin-top:10px">
+        <div class="campo">
+          <label data-i18n="form.date">Date de l'événement</label>
+          <input type="date" id="nuevo-date" />
+        </div>
+        <div class="campo">
+          <label data-i18n="form.budget">Budget max alloué par le BDI (€)</label>
+          <input id="nuevo-budget" type="number" min="0" step="0.01" data-i18n-ph="form.budgetPh" placeholder="ex : 300" />
+        </div>
+      </div>
+      <div class="fila" style="margin-top:10px">
+        <div class="campo">
+          <label data-i18n="form.member">Membre ayant engagé les dépenses</label>
+          <input id="nuevo-membre" data-i18n-ph="form.memberPh" placeholder="ex : Óscar MARTÍNEZ ZAMORA" />
+        </div>
+      </div>
+      <div style="text-align:right; margin-top:16px">
+        <button id="btn-crear" data-i18n="form.create">Créer</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: visor de documentos -->
+  <div id="modal-doc" class="modal modal-doc no-print">
+    <div class="modal-doc-caja">
+      <div class="modal-doc-barra">
+        <span id="doc-titulo" class="muted"></span>
+        <button class="modal-cerrar" id="doc-cerrar" title="Fermer">✕</button>
+      </div>
+      <div id="doc-visor" class="doc-visor"></div>
+    </div>
+  </div>
+
+  <!-- Modal: elegir firma (tesorero o miembro) -->
+  <div id="modal-firma" class="modal no-print">
+    <div class="modal-caja">
+      <button class="modal-cerrar" id="firma-cerrar" title="Fermer">✕</button>
+      <h2 id="firma-titulo" data-i18n="sign.titleTrez">Signature du trésorier</h2>
+      <p class="muted" data-i18n="sign.sub">Choisis une signature enregistrée :</p>
+      <div id="firma-cards" class="doc-cards"></div>
+      <div style="text-align:right; margin-top:14px">
+        <button class="sec" id="firma-importar" data-i18n="sign.import">+ Importer une autre image</button>
+        <input type="file" id="firma-file" accept="image/*" style="display:none" />
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: How to use -->
+  <div id="modal-howto" class="modal no-print">
+    <div class="modal-caja">
+      <button class="modal-cerrar" id="howto-cerrar" title="Fermer">✕</button>
+      <h2 id="howto-titulo"></h2>
+      <div id="howto-cuerpo"></div>
+    </div>
+  </div>
+
+  <div id="aviso-servidor" class="no-print">
+    <div class="caja">
+      <h3 data-i18n="server.downTitle">⚠ Serveur arrêté</h3>
+      <p data-i18n="server.downBody">La connexion avec le serveur local a été perdue.</p>
+      <p class="muted" data-i18n="server.downHint">Rouvre <b>Iniciar.vbs</b> puis recharge cette page.</p>
+      <button id="btn-reintentar" style="margin-top:12px" data-i18n="server.retry">Réessayer</button>
+    </div>
+  </div>
+
+  <script src="i18n.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

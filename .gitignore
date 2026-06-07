@@ -1,0 +1,19 @@
+# Claves de API y secretos — NUNCA subir al repo
+.env
+
+# Dependencias
+node_modules/
+
+# Datos reales (facturas, tickets, attestations, NDF generadas, backups)
+# Se conserva la carpeta pero no su contenido sensible
+Dossiers/*
+!Dossiers/.gitkeep
+
+# Firmas (imágenes personales del tesorero y de los miembros)
+Signatures/*
+!Signatures/.gitkeep
+
+# Sistema
+.DS_Store
+Thumbs.db
+npm-debug.log*

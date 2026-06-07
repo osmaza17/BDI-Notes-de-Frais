@@ -1,0 +1,18 @@
+{
+  "name": "notes-de-frais-bdi",
+  "version": "1.0.0",
+  "description": "App du trésorier du BDI CentraleSupélec : génération assistée des Notes de Frais (lecture des justificatifs et extraction par Claude).",
+  "type": "module",
+  "scripts": {
+    "start": "node servidor.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.102.0",
+    "dotenv": "^17.0.0",
+    "express": "^5.1.0",
+    "pdf-lib": "^1.17.1"
+  }
+}
