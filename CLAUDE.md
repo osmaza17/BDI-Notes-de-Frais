@@ -80,6 +80,9 @@ La salida estructurada (`output_config.format` json_schema) sí funciona en Haik
     (se conservan los últimos `MAX_BACKUPS`).
 - **Arranque (Windows)**: `Start.bat` (sin terminal, delega en `src/Start.vbs`),
   `Diagnose.bat` (con ventana, para ver errores). `npm start` = `node src/server.js`.
+  - **Node.js es el único requisito externo.** Si falta, los lanzadores ofrecen instalarlo
+    automáticamente con `winget` (`OpenJS.NodeJS.LTS`; requiere internet + UAC, y relanzar una vez);
+    si no hay winget, abren nodejs.org. `Start.vbs` comprueba `where node` antes de arrancar.
 - **Frontend** `src/web/` (vanilla JS): `index.html`, `styles.css`, `app.js`, `i18n.js`, `logo-bdi.png`.
   - CDNs: `pdf.js` (miniaturas) y `html2canvas` (rasterizar la NDF para el PDF final).
   - **i18n** (`i18n.js`): `t(clave, vars)` + `aplicarIdioma()` recorren `data-i18n` / `-ph` / `-title`.

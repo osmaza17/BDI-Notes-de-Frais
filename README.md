@@ -77,7 +77,9 @@ fills in the report. One API, one key.
 ## Running the app
 
 - **Windows:** double-click **`Start.bat`**. It starts the server **with no terminal window** and
-  opens your browser. The first run installs dependencies automatically. If something fails and you
+  opens your browser. The first run installs dependencies automatically. **If Node.js isn't installed,
+  the launcher offers to install it for you** (via `winget`, built into Windows 11 — needs internet and
+  the usual Windows permission prompt; re-run `Start.bat` once afterwards). If something fails and you
   want to see the logs, use **`Diagnose.bat`** (windowed version — see below).
 - **Any OS / manually:**
   ```bash
@@ -88,9 +90,10 @@ fills in the report. One API, one key.
 
 > **What is `Diagnose.bat`?** The everyday launcher (`Start.bat`) runs the server **hidden**, so if
 > something goes wrong you see nothing. `Diagnose.bat` does the same job but **in a visible terminal
-> window**: it checks that Node.js is installed, installs dependencies if needed, warns if `.env` is
-> missing, then runs the server **printing all its logs and errors** (and opens the browser). Use it
-> whenever the app won't start or the AI analysis misbehaves, to read the actual error message.
+> window**: it checks that Node.js is installed (and offers to install it via `winget` if missing),
+> installs dependencies if needed, warns if `.env` is missing, then runs the server **printing all its
+> logs and errors** (and opens the browser). Use it whenever the app won't start or the AI analysis
+> misbehaves, to read the actual error message.
 
 > The server **shuts down by itself when you close the browser window** (not on an inactivity timer);
 > reloading the page (F5) keeps it alive. If you edit `.env`, close and reopen. After updating the app
@@ -338,6 +341,10 @@ As long as the whole app lives in one folder with this structure, it works on **
 Node ≥ 20**: every path is relative, there are no native binaries and no build step, and all data and
 secrets live inside the folder. Just copy it and run `Start.bat` (or `npm install && npm start`). On
 a new machine you only need to recreate `.env` with your key (it is never copied with the repo).
+
+The **only external requirement is Node.js itself** (npm ships with it). If it's missing, `Start.bat`
+and `Diagnose.bat` offer to install it automatically via `winget`; otherwise they point you to
+nodejs.org.
 
 ## Privacy & the public repo
 

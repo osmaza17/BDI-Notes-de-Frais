@@ -8,14 +8,25 @@ cd /d "%~dp0"
 title BDI - Notes de Frais (diagnose)
 
 where node >nul 2>nul
-if errorlevel 1 (
-  echo.
-  echo  [ERROR] Node.js no esta instalado.
-  echo  Instalalo desde https://nodejs.org/ y vuelve a ejecutar este archivo.
-  echo.
-  pause
-  exit /b 1
-)
+if not errorlevel 1 goto NODE_OK
+echo.
+echo  [ERROR] Node.js no esta instalado.
+where winget >nul 2>nul
+if errorlevel 1 goto NODE_MANUAL
+echo  Se puede instalar automaticamente con winget.
+set /p RESP="  Instalar Node.js ahora? (S/N): "
+if /i not "%RESP%"=="S" goto NODE_MANUAL
+winget install --id OpenJS.NodeJS.LTS -e --accept-source-agreements --accept-package-agreements
+echo.
+echo  Instalacion terminada. Cierra esta ventana y vuelve a ejecutar Diagnose.bat.
+pause
+exit /b 0
+:NODE_MANUAL
+echo  Instalalo desde https://nodejs.org/ ^(version 20 o superior^) y vuelve a ejecutar.
+echo.
+pause
+exit /b 1
+:NODE_OK
 
 if not exist "node_modules" (
   echo.
