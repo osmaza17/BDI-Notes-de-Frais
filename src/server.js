@@ -13,7 +13,8 @@
 //  Portabilidad: todo es relativo a la carpeta del proyecto, sin
 //  rutas absolutas; basta copiar la carpeta a otro PC con Node.
 //
-//  Claves en .env (solo ANTHROPIC_API_KEY).
+//  Clave y modelo en .env (ANTHROPIC_API_KEY / ANTHROPIC_MODEL);
+//  editables en caliente desde el panel Réglages (/api/settings).
 // ============================================================
 
 import dotenv from 'dotenv';
@@ -34,7 +35,8 @@ import { fileURLToPath } from 'node:url';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const RAIZ = path.join(__dirname, '..');
 const DIR_DATOS = path.join(RAIZ, 'data');
-dotenv.config({ path: path.join(RAIZ, '.env') });
+const RUTA_ENV = path.join(RAIZ, '.env');
+dotenv.config({ path: RUTA_ENV });
 
 const DIR_DOSSIERS = path.join(DIR_DATOS, 'Cases');
 const DIR_WEB = path.join(__dirname, 'web');
@@ -42,13 +44,70 @@ const DIR_FIRMAS = path.join(DIR_DATOS, 'Signatures');
 const RUTA_PERSONAS = path.join(DIR_DATOS, 'people.json');
 
 const PORT = process.env.PORT || 4317;
-const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
-const MODELO_CLAUDE = process.env.ANTHROPIC_MODEL || 'claude-haiku-4-5';
-const SOPORTA_EFFORT = !/haiku/i.test(MODELO_CLAUDE);
+
+// Modelos que puede elegir el usuario desde el panel de Réglages.
+// `id` = identificador de la API de Anthropic; `label` = etiqueta visible.
+const MODELOS = [
+  { id: 'claude-haiku-4-5', label: 'Claude Haiku 4.5' },
+  { id: 'claude-sonnet-4-6', label: 'Claude Sonnet 4.6' },
+];
+const MODELO_POR_DEFECTO = 'claude-haiku-4-5';
+
+// Configuración EN CALIENTE: la clave y el modelo pueden cambiar en runtime
+// desde /api/settings (se persisten en .env y se recrea el cliente, sin reiniciar).
+let anthropicApiKey = process.env.ANTHROPIC_API_KEY || '';
+let modeloClaude = process.env.ANTHROPIC_MODEL || MODELO_POR_DEFECTO;
+let anthropic = new Anthropic({ apiKey: anthropicApiKey });
+
+// Haiku no admite `effort`; se calcula según el modelo activo en cada llamada.
 function outputConfig(schema) {
   const oc = { format: { type: 'json_schema', schema } };
-  if (SOPORTA_EFFORT) oc.effort = 'medium';
+  if (!/haiku/i.test(modeloClaude)) oc.effort = 'medium';
   return oc;
+}
+
+// Clasifica un error de la API de Anthropic en un `tipo` estable que el frontend
+// traduce a un mensaje claro + cómo resolverlo (ver `mostrarErrorIA` en app.js).
+// Códigos del SDK: 401 auth · 403 permiso · 429 límite · 500 servidor · 529 sobrecarga.
+// El saldo insuficiente llega como 400 invalid_request_error con «credit balance» en el mensaje.
+function clasificarErrorIA(e) {
+  const status = e?.status;
+  const tipoApi = e?.type || e?.error?.type || e?.error?.error?.type || '';
+  const msg = (e?.message || '').toLowerCase();
+  const red = `${e?.code || ''} ${e?.cause?.code || ''} ${msg}`;
+  if (!anthropicApiKey) return 'clave_falta';
+  if (/credit balance|insufficient|billing|purchase credits|plans? ?(&|and) ?billing/.test(msg) || tipoApi === 'billing_error')
+    return 'sin_creditos';
+  if (status === 401 || tipoApi === 'authentication_error' || /invalid x-api-key|invalid api key|authentication_error/.test(msg))
+    return 'clave_invalida';
+  if (status === 403 || tipoApi === 'permission_error') return 'sin_permiso';
+  if (status === 429 || tipoApi === 'rate_limit_error') return 'limite';
+  if (status === 529 || tipoApi === 'overloaded_error') return 'sobrecarga';
+  if ((status >= 500 && status < 600) || tipoApi === 'api_error') return 'servidor';
+  if (/enotfound|econnrefused|etimedout|eai_again|econnreset|fetch failed|getaddrinfo|network|socket hang up/i.test(red))
+    return 'red';
+  return 'desconocido';
+}
+
+// Actualiza claves en el .env conservando el resto de líneas (las añade si faltan).
+async function actualizarEnv(cambios) {
+  let lineas = [];
+  try { lineas = (await fs.readFile(RUTA_ENV, 'utf8')).split(/\r?\n/); } catch { /* no existe aún */ }
+  const claves = Object.keys(cambios);
+  const vistas = new Set();
+  lineas = lineas.map((ln) => {
+    const m = /^\s*([A-Za-z0-9_]+)\s*=/.exec(ln);
+    if (m && claves.includes(m[1])) { vistas.add(m[1]); return `${m[1]}=${cambios[m[1]]}`; }
+    return ln;
+  });
+  for (const k of claves) if (!vistas.has(k)) lineas.push(`${k}=${cambios[k]}`);
+  await fs.writeFile(RUTA_ENV, lineas.join('\n'), 'utf8');
+}
+
+// Enmascara la clave para mostrarla sin revelarla entera.
+function maskKey(k) {
+  if (!k) return '';
+  return k.length <= 12 ? '••••' : `${k.slice(0, 7)}…${k.slice(-4)}`;
 }
 
 const ADRESSE_BDI = '3 rue Joliot Curie, 91190, Gif-sur-Yvette';
@@ -56,8 +115,6 @@ const MAX_BACKUPS = 15;
 
 const EXT_IMAGEN = new Set(['.jpg', '.jpeg', '.png', '.webp', '.gif', '.bmp']);
 const esImagenNombre = (n) => EXT_IMAGEN.has(path.extname(n).toLowerCase());
-
-const anthropic = new Anthropic({ apiKey: ANTHROPIC_API_KEY });
 
 await fs.mkdir(DIR_DOSSIERS, { recursive: true });
 await fs.mkdir(DIR_FIRMAS, { recursive: true });
@@ -151,23 +208,12 @@ const ESQUEMA_OBS = {
   type: 'array', items: { type: 'string' },
   description: "Liste de remarques courtes et AUTONOMES pour le trésorier (une remarque = un élément). Tableau vide si rien à signaler.",
 };
-const ESQUEMA_CON_DOCS = {
-  type: 'object', additionalProperties: false,
-  required: ['documents', 'lignes', 'observations'],
-  properties: {
-    documents: {
-      type: 'array',
-      items: {
-        type: 'object', additionalProperties: false, required: ['fichier', 'transcription'],
-        properties: {
-          fichier: { type: 'string' },
-          transcription: { type: 'string', description: 'Texte intégral lisible sur le document.' },
-        },
-      },
-    },
-    lignes: { type: 'array', items: ESQUEMA_LIGNE },
-    observations: ESQUEMA_OBS,
-  },
+// Transcripción POR LÍNEAS: una cadena por línea visible del documento. El servidor las une
+// con '\n', así se preserva la estructura (tabla, bloques) en lugar de un párrafo corrido.
+const ESQUEMA_TRANSCRIPCION_CAMPO = {
+  type: 'array',
+  items: { type: 'string' },
+  description: "Texte du document transcrit LIGNE PAR LIGNE : une chaîne par ligne visible, dans l'ordre de lecture (préserve la mise en page : chaque ligne du tableau, chaque bloc = une entrée). Ne fusionne PAS tout sur une seule entrée.",
 };
 const ESQUEMA_SOLO = {
   type: 'object', additionalProperties: false, required: ['lignes', 'observations'],
@@ -176,7 +222,7 @@ const ESQUEMA_SOLO = {
 
 const ESQUEMA_TRANSCRIPCION = {
   type: 'object', additionalProperties: false, required: ['transcription'],
-  properties: { transcription: { type: 'string', description: 'Texte intégral lisible sur le document.' } },
+  properties: { transcription: ESQUEMA_TRANSCRIPCION_CAMPO },
 };
 
 // Datos bancarios extraídos de un RIB.
@@ -196,10 +242,11 @@ const SYSTEM_PROMPT = `Tu es l'assistant comptable du Bureau de l'International 
 On te fournit les pièces justificatives (factures, tickets de caisse, attestations sur l'honneur) d'une section pour un événement. Tu prépares les lignes d'une "Note de Frais" (NDF) qui servira au remboursement de la section par le BDI.
 
 Règles :
-- Lis attentivement chaque document fourni (image ou PDF) et transcris fidèlement son texte.
+- Lis attentivement chaque document fourni (image ou PDF) et transcris fidèlement son texte. Transcris LIGNE PAR LIGNE en conservant la structure d'origine : chaque ligne visible, chaque ligne de tableau et chaque bloc = une entrée distincte du tableau "transcription". Ne fusionne JAMAIS tout le document sur une seule ligne.
 - Une ligne par achat. Un ticket de caisse accompagné de son attestation sur l'honneur = une seule ligne (utilise le ticket pour les montants, l'attestation pour l'objet) ; renseigne alors les DEUX fichiers dans "fichiers_source".
 - Les attestations sur l'honneur seules (sans montant) ne génèrent PAS de ligne propre : sers-t'en pour préciser l'objet des autres lignes, et cite-les dans "fichiers_source" de la ligne qu'elles appuient.
 - "fichiers_source" doit lister TOUS les fichiers d'où sort la ligne, pour qu'aucune pièce réellement utilisée ne soit signalée comme « non utilisée ».
+- TRÈS IMPORTANT — dans les champs "fichier" et "fichiers_source", recopie EXACTEMENT le nom du fichier tel qu'il apparaît après "### Fichier :" (même orthographe, mêmes accents, même langue, même extension). Ne traduis JAMAIS et ne corrige JAMAIS le nom du fichier, même si son contenu est dans une autre langue.
 - IMPORTANT — LA TVA EST TOTALEMENT IGNORÉE. On NE décompose JAMAIS la TVA et on ne fait JAMAIS de lignes séparées par taux. Pour chaque ligne : prix_ht = le MONTANT FINAL PAYÉ (toutes taxes comprises, le total qui figure sur le ticket/facture), taux_tva = 0, montant_ttc = ce même montant final. Ne calcule rien, recopie simplement le montant total payé.
 - Rédige les libellés (article) en français, de façon concise.
 - Pour chaque ligne, indique ta "confiance" (haute/moyenne/basse) selon la lisibilité du document et ta certitude sur les montants.
@@ -211,12 +258,14 @@ const ctx = (ev) =>
   `Événement : ${ev.nom}\nSection (pôle) : ${ev.section || ''}\nDate de l'événement : ${ev.date || '(non précisée)'}`;
 const textoRespuesta = (resp) => resp.content.find((b) => b.type === 'text')?.text || '{}';
 
-async function bloquesDeArchivos(id, archivos) {
+async function bloquesDeArchivos(id, archivos, onLog) {
   const bloques = [];
   for (const nombre of archivos) {
     const ext = path.extname(nombre).toLowerCase();
     const mime = MIME_POR_EXT[ext] || 'application/pdf';
-    const data = (await fs.readFile(path.join(rutaDocs(id), nombre))).toString('base64');
+    const raw = await fs.readFile(path.join(rutaDocs(id), nombre));
+    onLog?.(`📄 Lecture · ${nombre} · ${Math.max(1, Math.round(raw.length / 1024))} Ko · ${mime}`);
+    const data = raw.toString('base64');
     bloques.push({ type: 'text', text: `### Fichier : ${nombre}` });
     if (mime.startsWith('image/')) bloques.push({ type: 'image', source: { type: 'base64', media_type: mime, data } });
     else bloques.push({ type: 'document', source: { type: 'base64', media_type: 'application/pdf', data } });
@@ -224,45 +273,90 @@ async function bloquesDeArchivos(id, archivos) {
   return bloques;
 }
 
-async function analizarConClaude(ev, id, archivos) {
-  const content = [
-    { type: 'text', text: `${ctx(ev)}\n\nLis chaque document ci-dessous, transcris son texte intégral, puis prépare les lignes de la Note de Frais.` },
-    ...(await bloquesDeArchivos(id, archivos)),
-  ];
-  const resp = await anthropic.messages.create({
-    model: MODELO_CLAUDE, max_tokens: 8000, system: SYSTEM_PROMPT,
-    output_config: outputConfig(ESQUEMA_CON_DOCS), messages: [{ role: 'user', content }],
-  });
-  const r = JSON.parse(textoRespuesta(resp));
-  const ocr = {};
-  for (const d of r.documents || []) ocr[d.fichier] = d.transcription || '';
-  for (const nombre of archivos) if (!(nombre in ocr)) ocr[nombre] = '';
-  return { ocr, lignes: r.lignes || [], observations: r.observations || [] };
+// Claude devuelve la transcripción como array de líneas (ver ESQUEMA_TRANSCRIPCION_CAMPO);
+// las unimos con '\n' para conservar la estructura. Compatible con respuestas antiguas (string).
+const unirTranscripcion = (t) => Array.isArray(t) ? t.join('\n') : (t || '');
+
+// Normaliza un nombre para comparar sin acentos, mayúsculas ni signos.
+const normNombre = (s) => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '')
+  .toLowerCase().replace(/[^a-z0-9]+/g, '');
+
+// Devuelve el nombre REAL correspondiente a uno citado por Claude en fichiers_source.
+function resolverFuente(nombre, archivos, mapa) {
+  if (mapa && mapa.has(nombre)) return mapa.get(nombre);
+  if (archivos.includes(nombre)) return nombre;
+  return archivos.find((r) => normNombre(r) === normNombre(nombre)) || nombre;
+}
+function remapearFuentes(lignes, archivos, mapa) {
+  return (lignes || []).map((l) => Array.isArray(l.fichiers_source)
+    ? { ...l, fichiers_source: l.fichiers_source.map((f) => resolverFuente(f, archivos, mapa)) }
+    : l);
 }
 
-// Re-transcribe un seul document (utile en cas d'échec de l'analyse automatique).
-async function transcribirDocumento(ev, id, nombre) {
+// Análisis SECUENCIAL: cada documento se transcribe en su propia petición (entrada y salida
+// pequeñas → fiable, sin truncar el JSON ni saturar la conexión enviando todo de golpe).
+// Después, UN solo paso estructura las líneas de la NDF a partir de todas las transcripciones.
+// Transcribe un documento con UN reintento automático: si la primera lectura falla (error de la
+// API de Anthropic) o devuelve 0 caracteres, se vuelve a pedir la lectura una segunda vez. Si el
+// segundo intento también falla o sigue vacío, lanza un error → ventana flotante para el usuario.
+async function transcribirConReintento(ev, id, nombre, onLog) {
+  let ultimoError = null;
+  for (let intento = 1; intento <= 2; intento++) {
+    try {
+      const txt = await transcribirDocumento(ev, id, nombre, onLog);
+      if ((txt || '').trim()) return txt;                 // lectura correcta
+      ultimoError = new Error(`Le document « ${nombre} » a été lu mais aucun texte n'a été extrait (0 caractère).`);
+      onLog?.(`⚠ ${nombre} · 0 caractère${intento < 2 ? ' · nouvelle tentative…' : ''}`);
+    } catch (e) {
+      ultimoError = e;
+      onLog?.(`⚠ ${nombre} · échec de lecture : ${e.message}${intento < 2 ? ' · nouvelle tentative…' : ''}`);
+    }
+  }
+  throw new Error(`Le document « ${nombre} » n'a pas pu être lu après 2 tentatives. ${ultimoError?.message || ''}`.trim());
+}
+
+async function analizarConClaude(ev, id, archivos, onLog) {
+  const ocr = {};
+  onLog?.(`🔎 Analyse séquentielle de ${archivos.length} document(s)…`);
+  let i = 0;
+  for (const nombre of archivos) {
+    onLog?.(`📝 [${++i}/${archivos.length}] Transcription · ${nombre}`);
+    ocr[nombre] = await transcribirConReintento(ev, id, nombre, onLog);
+    onLog?.(`✓ ${nombre} · transcription ${ocr[nombre].length} caractères`);
+  }
+  onLog?.(`🧮 Construction des lignes de la Note de Frais…`);
+  const { lignes, observations } = await estructurarDesdeTextos(ev, ocr);
+  onLog?.(`📥 ${lignes.length} ligne(s) · ${observations.length} remarque(s)`);
+  return { ocr, lignes, observations };
+}
+
+// Transcribe UN seul document. Es la unidad del análisis secuencial y también el botón
+// « Releer ce document » de la pestaña Analyse.
+async function transcribirDocumento(ev, id, nombre, onLog) {
   const content = [
     { type: 'text', text: `${ctx(ev)}\n\nLis le document ci-dessous et transcris fidèlement son texte intégral.` },
-    ...(await bloquesDeArchivos(id, [nombre])),
+    ...(await bloquesDeArchivos(id, [nombre], onLog)),
   ];
+  onLog?.(`⏳ Envoi à Claude (${modeloClaude})…`);
   const resp = await anthropic.messages.create({
-    model: MODELO_CLAUDE, max_tokens: 4000, system: SYSTEM_PROMPT,
+    model: modeloClaude, max_tokens: 16000, system: SYSTEM_PROMPT,
     output_config: outputConfig(ESQUEMA_TRANSCRIPCION), messages: [{ role: 'user', content }],
   });
   const r = JSON.parse(textoRespuesta(resp));
-  return r.transcription || '';
+  return unirTranscripcion(r.transcription);
 }
 
 async function estructurarDesdeTextos(ev, ocr) {
   const bloques = Object.entries(ocr).map(([nom, txt]) => `### Fichier : ${nom}\n${txt || '(vide)'}`).join('\n\n---\n\n');
   const resp = await anthropic.messages.create({
-    model: MODELO_CLAUDE, max_tokens: 8000, system: SYSTEM_PROMPT,
+    model: modeloClaude, max_tokens: 16000, system: SYSTEM_PROMPT,
     output_config: outputConfig(ESQUEMA_SOLO),
     messages: [{ role: 'user', content: `${ctx(ev)}\n\nVoici les transcriptions des pièces :\n\n${bloques}` }],
   });
   const r = JSON.parse(textoRespuesta(resp));
-  return { lignes: r.lignes || [], observations: r.observations || [] };
+  // Mismo riesgo de nombres "corregidos" por Claude: se remapean a las claves reales del OCR.
+  const lignes = remapearFuentes(r.lignes || [], Object.keys(ocr), new Map());
+  return { lignes, observations: r.observations || [] };
 }
 
 // Extrae los datos bancarios de un RIB (PDF o imagen, base64).
@@ -273,7 +367,7 @@ async function extraerRIB(nombre, contenidoBase64) {
     ? { type: 'image', source: { type: 'base64', media_type: mime, data: contenidoBase64 } }
     : { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: contenidoBase64 } };
   const resp = await anthropic.messages.create({
-    model: MODELO_CLAUDE, max_tokens: 1500,
+    model: modeloClaude, max_tokens: 1500,
     system: "Tu lis un RIB (relevé d'identité bancaire) et tu en extrais les informations. Sois fidèle ; laisse vide ce qui est absent.",
     output_config: outputConfig(ESQUEMA_RIB),
     messages: [{ role: 'user', content: [{ type: 'text', text: "Extrais les informations bancaires de ce RIB." }, bloque] }],
@@ -312,12 +406,29 @@ app.use(express.static(DIR_WEB));
 
 app.use('/api', (req, res, next) => {
   if (req.path.includes('analizar') || req.path.includes('regenerar') || req.path.includes('extraire')) {
-    if (!ANTHROPIC_API_KEY) {
-      return res.status(500).json({ error: 'Falta ANTHROPIC_API_KEY. Copia .env.example como .env y rellénala.' });
+    if (!anthropicApiKey) {
+      return res.status(500).json({ error: 'Falta la clé API Anthropic. Renseigne-la dans Réglages (⚙).', tipo: 'clave_falta' });
     }
   }
   next();
 });
+
+// ---------- Journal d'analyse : logs en direct (SSE) ----------
+// Cada evento tiene un buffer de logs y suscriptores SSE. emitLog escribe a la
+// consola del servidor Y los envía al cliente, para que se vean en la pestaña Analyse.
+const logBuffer = new Map();   // id -> [{ t, msg }]
+const logSubs = new Map();     // id -> Set<res>
+function resetLog(id) { logBuffer.set(id, []); }
+function emitLog(id, msg) {
+  const linea = { t: Date.now(), msg };
+  console.log(`[${id}] ${msg}`);
+  const buf = logBuffer.get(id) || [];
+  buf.push(linea);
+  while (buf.length > 200) buf.shift();
+  logBuffer.set(id, buf);
+  const subs = logSubs.get(id);
+  if (subs) for (const r of subs) { try { r.write(`data: ${JSON.stringify(linea)}\n\n`); } catch { /* cliente cerrado */ } }
+}
 
 // ---------- Apagado SOLO al cerrar la ventana del navegador ----------
 // El cliente manda un "beacon" al cerrar la pestaña. Damos una pequeña
@@ -334,6 +445,46 @@ app.post('/api/cerrar', (req, res) => {
     console.log('\n  Ventana cerrada — apagando el servidor. ¡Hasta luego!\n');
     process.exit(0);
   }, 4000); // si es un F5, el nuevo ping cancela esto
+});
+
+// ---------- Réglages (clé API + modèle) ----------
+// La clave nunca se devuelve entera: solo si está puesta y una versión enmascarada.
+function vistaSettings() {
+  return { apiKeySet: !!anthropicApiKey, apiKeyMask: maskKey(anthropicApiKey), model: modeloClaude, models: MODELOS };
+}
+app.get('/api/settings', (req, res) => res.json(vistaSettings()));
+// App local: el botón «ojo» pide la clave entera para mostrarla al propio usuario en su máquina.
+app.get('/api/settings/revelar', (req, res) => res.json({ apiKey: anthropicApiKey || '' }));
+
+app.put('/api/settings', async (req, res) => {
+  const b = req.body || {};
+  const cambios = {};
+  if (typeof b.apiKey === 'string' && b.apiKey.trim()) {
+    anthropicApiKey = b.apiKey.trim();
+    anthropic = new Anthropic({ apiKey: anthropicApiKey }); // recrea el cliente en caliente
+    cambios.ANTHROPIC_API_KEY = anthropicApiKey;
+  }
+  if (typeof b.model === 'string' && MODELOS.some((m) => m.id === b.model)) {
+    modeloClaude = b.model;
+    cambios.ANTHROPIC_MODEL = modeloClaude;
+  }
+  try {
+    if (Object.keys(cambios).length) await actualizarEnv(cambios);
+  } catch (e) { return res.status(500).json({ error: 'No se pudo guardar en .env : ' + e.message }); }
+  res.json(vistaSettings());
+});
+
+// Prueba una clave/modelo (los del cuerpo si se envían, si no los activos) SIN persistir.
+app.post('/api/settings/test', async (req, res) => {
+  const b = req.body || {};
+  const key = (typeof b.apiKey === 'string' && b.apiKey.trim()) ? b.apiKey.trim() : anthropicApiKey;
+  const model = (typeof b.model === 'string' && MODELOS.some((m) => m.id === b.model)) ? b.model : modeloClaude;
+  if (!key) return res.status(400).json({ ok: false, error: 'Falta la clé API.' });
+  try {
+    const cli = new Anthropic({ apiKey: key });
+    await cli.messages.create({ model, max_tokens: 8, messages: [{ role: 'user', content: 'ping' }] });
+    res.json({ ok: true, model });
+  } catch (e) { res.status(400).json({ ok: false, error: e.message, tipo: clasificarErrorIA(e) }); }
 });
 
 // Vista pública del evento.
@@ -448,6 +599,8 @@ app.delete('/api/eventos/:id/archivos/:nombre', async (req, res) => {
 app.get('/api/eventos/:id/archivos/:nombre', async (req, res) => {
   const { id } = req.params;
   if (!idValido(id)) return res.status(400).end();
+  // inline → el navegador renderiza el PDF dentro del <iframe> en vez de forzar la descarga.
+  res.setHeader('Content-Disposition', 'inline');
   res.sendFile(path.join(rutaDocs(id), path.basename(req.params.nombre)));
 });
 
@@ -546,12 +699,31 @@ app.post('/api/eventos/:id/archivos/:nombre/reextraer', async (req, res) => {
   if (!await fs.access(path.join(rutaDocs(id), nom)).then(() => true, () => false))
     return res.status(404).json({ error: 'Archivo no encontrado.' });
   try {
-    const transcription = await transcribirDocumento(ev, id, nom);
+    resetLog(id);
+    emitLog(id, `🔁 Relecture · ${nom} · modèle ${modeloClaude}`);
+    const transcription = await transcribirDocumento(ev, id, nom, (m) => emitLog(id, m));
     ev.ocr = ev.ocr || {};
     ev.ocr[nom] = transcription;
     await guardarEvento(id, ev);
+    emitLog(id, `✅ ${nom} · transcription ${transcription.length} caractères`);
     res.json({ ok: true, transcription });
-  } catch (e) { console.error('Error al re-extraer:', e); res.status(500).json({ error: e.message }); }
+  } catch (e) { emitLog(id, `❌ Erreur · ${e.message}`); console.error('Error al re-extraer:', e); res.status(500).json({ error: e.message, tipo: clasificarErrorIA(e) }); }
+});
+
+// Stream SSE del journal d'analyse de un evento (logs en direct para la pestaña Analyse).
+app.get('/api/eventos/:id/logs', (req, res) => {
+  const { id } = req.params;
+  if (!idValido(id)) return res.status(400).end();
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.flushHeaders?.();
+  res.write(': ok\n\n'); // abre el stream
+  for (const linea of logBuffer.get(id) || []) res.write(`data: ${JSON.stringify(linea)}\n\n`);
+  let set = logSubs.get(id);
+  if (!set) { set = new Set(); logSubs.set(id, set); }
+  set.add(res);
+  req.on('close', () => { set.delete(res); });
 });
 
 app.post('/api/eventos/:id/analizar', async (req, res) => {
@@ -562,7 +734,9 @@ app.post('/api/eventos/:id/analizar', async (req, res) => {
   try {
     const archivos = await listarArchivos(id);
     if (archivos.length === 0) return res.status(400).json({ error: 'No hay documentos que analizar.' });
-    const extraido = await analizarConClaude(ev, id, archivos);
+    resetLog(id);
+    emitLog(id, `🚀 Analyse de ${archivos.length} document(s) · modèle ${modeloClaude}`);
+    const extraido = await analizarConClaude(ev, id, archivos, (m) => emitLog(id, m));
     ev.ocr = extraido.ocr;
     const previo = ev.datos || {};
     ev.datos = construirDatos(ev, extraido);
@@ -572,8 +746,9 @@ app.post('/api/eventos/:id/analizar', async (req, res) => {
     ev.datos.iban = previo.iban || ev.iban || '';
     ev.datos.ordre_pieces = archivos.slice(); // orden por defecto = orden actual
     await guardarEvento(id, ev);
+    emitLog(id, '✅ Analyse terminée');
     res.json({ datos: ev.datos, ocr: ev.ocr });
-  } catch (e) { console.error('Error al analizar:', e); res.status(500).json({ error: e.message }); }
+  } catch (e) { emitLog(id, `❌ Erreur · ${e.message}`); console.error('Error al analizar:', e); res.status(500).json({ error: e.message, tipo: clasificarErrorIA(e) }); }
 });
 
 app.put('/api/eventos/:id/ocr', async (req, res) => {
@@ -602,7 +777,7 @@ app.post('/api/eventos/:id/regenerar', async (req, res) => {
     ev.datos.ordre_pieces = (previo.ordre_pieces && previo.ordre_pieces.length) ? previo.ordre_pieces : (await listarArchivos(id));
     await guardarEvento(id, ev);
     res.json({ datos: ev.datos, ocr: ev.ocr });
-  } catch (e) { console.error('Error al regenerar:', e); res.status(500).json({ error: e.message }); }
+  } catch (e) { console.error('Error al regenerar:', e); res.status(500).json({ error: e.message, tipo: clasificarErrorIA(e) }); }
 });
 
 app.put('/api/eventos/:id/datos', async (req, res) => {
@@ -663,7 +838,7 @@ app.post('/api/personnes/extraire', async (req, res) => {
   const { nombre, contenidoBase64 } = req.body || {};
   if (!nombre || !contenidoBase64) return res.status(400).json({ error: 'Falta el archivo del RIB.' });
   try { res.json(await extraerRIB(nombre, contenidoBase64)); }
-  catch (e) { console.error('Error RIB:', e); res.status(500).json({ error: e.message }); }
+  catch (e) { console.error('Error RIB:', e); res.status(500).json({ error: e.message, tipo: clasificarErrorIA(e) }); }
 });
 
 // ---------- Firmas (carpeta /Signatures, compartida) ----------
@@ -753,7 +928,7 @@ app.post('/api/eventos/:id/pdf', async (req, res) => {
 app.listen(PORT, () => {
   console.log('\n  BDI · Notes de Frais');
   console.log(`  Abre tu navegador en:  http://localhost:${PORT}\n`);
-  if (!ANTHROPIC_API_KEY) {
-    console.log('  ⚠  Falta ANTHROPIC_API_KEY en .env — el análisis con IA no funcionará.\n');
+  if (!anthropicApiKey) {
+    console.log('  ⚠  Falta ANTHROPIC_API_KEY — configúrala en Réglages (⚙) o en .env.\n');
   }
 });

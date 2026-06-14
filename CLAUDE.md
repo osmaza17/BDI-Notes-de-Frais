@@ -49,10 +49,13 @@ raíz/
 ## Pipeline
 
 ```
-Subir documentos (PDF/JPG/PNG)  →  análisis AUTOMÁTICO
+Subir documentos (PDF/JPG/PNG)  →  análisis AUTOMÁTICO (SECUENCIAL)
         ↓
-Claude (Anthropic) lee cada documento DIRECTAMENTE (visión / document input)
-   → transcribe cada pieza  + extrae las líneas de la NDF (con nivel de confianza)
+Para CADA documento, una petición propia: Claude lo lee DIRECTAMENTE (visión / document input)
+   → transcribe esa pieza (`transcribirDocumento`)
+        ↓
+UN solo paso final: estructura las líneas de la NDF a partir de TODAS las transcripciones
+   (`estructurarDesdeTextos`, solo texto, con nivel de confianza y fichiers_source)
         ↓
 Revisión humana (Analyse: corregir texto · Note de Frais: corregir datos, todo autoguardado)
         ↓
@@ -61,8 +64,30 @@ PDF FINAL = NDF (rasterizada) + adjuntos (pdf-lib), en el orden elegido por el t
 
 **No se usa OCR externo.** El documento se envía directamente a Claude (un paso, una clave).
 
-**Modelo:** por defecto `claude-haiku-4-5` (configurable con `ANTHROPIC_MODEL` en `.env`).
-**Haiku no admite `effort`** → `outputConfig()` lo omite si el modelo es Haiku (`SOPORTA_EFFORT`).
+**Análisis SECUENCIAL (importante):** `analizarConClaude` NO manda todos los documentos en una
+sola petición. Transcribe **doc por doc** (`transcribirDocumento`, una petición por fichero) y
+luego hace **un único** paso de estructuración (`estructurarDesdeTextos`). Motivo: enviar todo de
+golpe hinchaba la entrada (N PDFs/imágenes en base64) y la salida (todo el texto junto), provocando
+JSON truncado (`Unterminated string`) o cortes de conexión. Con peticiones pequeñas cada llamada es
+fiable. `max_tokens: 16000` (no-streaming) por llamada; ambos modelos admiten hasta 64K de salida.
+
+**Reintento por documento** (`transcribirConReintento`): si la lectura de un documento falla (error
+de la API) o devuelve **0 caracteres**, se reintenta **una** segunda vez en Anthropic. Si el segundo
+intento también falla/vacío, se lanza un error → el endpoint `/analizar` responde 500 y el frontend
+muestra la **ventana flotante de error**. Cada intento se registra en el Journal d'analyse.
+
+**Transcripción por líneas (preservar estructura):** el esquema de salida pide `transcription`
+como **array de strings** (una por línea visible del documento → `ESQUEMA_TRANSCRIPCION_CAMPO`);
+el server las une con `\n` (`unirTranscripcion`) antes de guardarlas en `ocr`. Así se conserva la
+estructura (tabla, bloques) en el `<textarea>` de Analyse en vez de un párrafo corrido. `ev.ocr[nom]`
+sigue siendo un **string** (ahora con saltos de línea); el resto del pipeline no cambia.
+
+**Modelo:** por defecto `claude-haiku-4-5` (configurable con `ANTHROPIC_MODEL` en `.env` **o desde
+el panel Réglages ⚙**, que lo cambia en caliente y lo persiste en `.env`). Modelos ofrecidos en la
+UI: `claude-haiku-4-5` y `claude-sonnet-4-6` (`MODELOS` en `server.js`).
+**Haiku no admite `effort`** → `outputConfig()` lo omite calculando `/haiku/i.test(modeloClaude)`.
+**Clave/modelo en caliente:** `anthropicApiKey`, `modeloClaude` y el cliente `anthropic` son `let`;
+`PUT /api/settings` los actualiza, recrea el cliente y reescribe `.env` (`actualizarEnv`) sin reiniciar.
 La salida estructurada (`output_config.format` json_schema) sí funciona en Haiku 4.5.
 
 ## Arquitectura
@@ -84,9 +109,18 @@ La salida estructurada (`output_config.format` json_schema) sí funciona en Haik
     automáticamente con `winget` (`OpenJS.NodeJS.LTS`; requiere internet + UAC, y relanzar una vez);
     si no hay winget, abren nodejs.org. `Start.vbs` comprueba `where node` antes de arrancar.
 - **Frontend** `src/web/` (vanilla JS): `index.html`, `styles.css`, `app.js`, `i18n.js`, `logo-bdi.png`.
-  - CDNs: `pdf.js` (miniaturas) y `html2canvas` (rasterizar la NDF para el PDF final).
+  - Vendor local (`src/web/vendor/`): `pdf.js`/`pdf.worker` (miniaturas y preview de la pestaña
+    Signée) y `html2canvas` (rasterizar la NDF para el PDF final).
+  - **Visor de documentos** (`montarOriginal`): en la pestaña **Analyse** y en el modal `#modal-doc`
+    los documentos se muestran con **`<iframe>`** (PDF, render inline del navegador) o **`<img>`**
+    (imágenes). El server sirve los archivos con `Content-Disposition: inline` para que el PDF se
+    renderice en el iframe sin forzar descarga. (`pintarVisorPDF` con pdf.js solo se usa ya en la
+    preview de Signée.)
   - **i18n** (`i18n.js`): `t(clave, vars)` + `aplicarIdioma()` recorren `data-i18n` / `-ph` / `-title`.
-    Idioma en `localStorage('idioma-ndf')`, selector FR/ES/EN junto a Thème. La **hoja NDF se queda
+    Idioma en `localStorage('idioma-ndf')`. **Selector de idioma** = desplegable **propio** (no
+    `<select>`) **justo después del indicador de servidor** (`#lang-select` → `#lang-btn` + `#lang-menu`):
+    usa **banderas SVG** (`FLAGS` en `app.js`), porque los emoji 🇫🇷🇪🇸🇬🇧 no se renderizan en Windows.
+    `elegirIdioma()` guarda y re-renderiza; cierra con click fuera / Escape. La **hoja NDF se queda
     en francés** (documento oficial); solo se traduce la interfaz.
   - **Home**: eventos **agrupados por año**; **buscador** (`#buscar`) + **chips de estado**
     (`#chips-estado`, multi-selección; `estado.filtro.estados[]`, `renderChipsEstado`); tarjetas con
@@ -95,6 +129,11 @@ La salida estructurada (`output_config.format` json_schema) sí funciona en Haik
     documentos** (`#crear-dropzone`, `crearDocs[]`): al crear se suben y se lanza el análisis.
   - **Análisis automático**: al subir/borrar docs se llama solo a `/analizar` (`lanzarAnalisis()`,
     cancelable por `estado.analisisToken`: resultado obsoleto se descarta; borrar un doc corta y relanza).
+  - **Journal d'analyse (logs en direct)**: el servidor emite logs por paso (`emitLog`) y los expone
+    por **SSE** (`GET /api/eventos/:id/logs`); el cliente (`abrirLogStream`/`renderLogs`) los muestra en
+    un panel consola (`#analyse-logs-panel`) de la pestaña Analyse durante el análisis y la relectura
+    (`reextraer`). El buffer por evento se reinicia (`resetLog`) al iniciar cada análisis; los mismos
+    mensajes salen por `console.log` del servidor. Los mensajes del log van en francés (no se traducen).
   - **Duplicados**: al subir, el server calcula sha256 y rechaza (409) si ya existe un documento idéntico.
   - **Huérfanos**: documentos subidos que no aparecen en ninguna `ligne.fichiers_source` → aviso en la NDF
     (`#aviso-orphelins`) y badge rojo en la tarjeta (`documentosHuerfanos()`).
@@ -141,7 +180,12 @@ La salida estructurada (`output_config.format` json_schema) sí funciona en Haik
   - **Orden de adjuntos**: cards reordenables (drag&drop) en `#ordre-cards` → `datos.ordre_pieces`.
   - **Ayuda única**: un solo botón `#btn-howto-global` (header) → `abrirAyudaGlobal()` concatena todas
     las secciones de `AYUDA` (incl. `signee`) en `#modal-howto` (`.modal-howto-grande`).
-  - **Modales**: crear evento, visor doc (`#modal-doc`), firma (`#modal-firma`), ayuda (`#modal-howto`).
+  - **Réglages** (`#btn-ajustes` junto a Thème → `#modal-ajustes`): cambia la **clave API** (campo
+    password con ojo; placeholder = clave enmascarada, vacío = conservar) y el **modelo** (desplegable
+    poblado desde `GET /api/settings`). **Tester la connexion** (`POST /api/settings/test`) prueba sin
+    guardar; **Enregistrer** hace `PUT /api/settings`. Sin estado de evento; i18n bajo `settings.*`.
+  - **Modales**: crear evento, visor doc (`#modal-doc`), firma (`#modal-firma`), ayuda (`#modal-howto`),
+    réglages (`#modal-ajustes`).
 - **Datos** `data/Cases/<id>/`: `event.json` (todo), `Documents/` (ficheros), `_backups/` (copias).
 - **Firmas**: carpeta **`data/Signatures/`** (gitignored); solo firmas del tesorero de l'asso
   mère (`Signature_Trez_BDI_*`).
@@ -195,6 +239,7 @@ Reglas de negocio (no romper):
 | POST/DELETE/GET | `/api/eventos/:id/archivos[/:n]` | subir / borrar / servir fichero |
 | POST | `/api/eventos/:id/archivos/:n/renombrar` | renombrar |
 | POST | `/api/eventos/:id/analizar` | Claude lee documentos → ocr + datos |
+| GET | `/api/eventos/:id/logs` | **SSE**: journal d'analyse en directo (logs por paso) |
 | PUT | `/api/eventos/:id/ocr` | guardar transcripciones |
 | POST | `/api/eventos/:id/regenerar` | re-extraer desde transcripciones |
 | PUT | `/api/eventos/:id/datos` | guardar la NDF (autoguardado) |
@@ -204,6 +249,8 @@ Reglas de negocio (no romper):
 | GET/POST/PUT/DELETE | `/api/personnes[/:pid]` | CRUD de personas (base de RIB) |
 | POST | `/api/personnes/extraire` | extraer datos bancarios de un RIB (Claude) |
 | GET/POST/DELETE | `/api/firmas[/:n]` | listar / subir / servir / borrar firmas |
+| GET/PUT | `/api/settings` | leer (clave enmascarada + modelo) / cambiar clave-modelo en caliente |
+| POST | `/api/settings/test` | probar una clave/modelo (sin persistir) con un mensaje mínimo |
 | POST | `/api/ping` · `/api/cerrar` | latido / cierre por ventana |
 
 ## La hoja NDF (réplica del modelo oficial)
@@ -218,6 +265,7 @@ rasterizando cada `.ndf-page` con html2canvas y concatenando con pdf-lib (no se 
 
 - **Idioma**: interfaz traducida (FR/ES/EN); la NDF en francés; comentarios en español.
 - **No** añadir dependencias con binarios ni paso de build (portabilidad).
-- Reiniciar el servidor tras editar `.env`. Tras editar `src/web/*`, recargar con Ctrl+F5.
+- Reiniciar el servidor tras editar `.env` **a mano** (la clave/modelo cambiados desde Réglages se
+  aplican en caliente, sin reiniciar). Tras editar `src/web/*`, recargar con Ctrl+F5.
 - Verificación visual: Chrome headless + deep-link `#evento=<id>&tab=documents|analyse|ndf[&voir=<f>]`.
 - `analizar`/`regenerar` gastan tokens reales; el análisis es **automático al subir documentos**.

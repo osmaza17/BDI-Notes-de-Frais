@@ -45,11 +45,15 @@ the folder.
 ## What it does
 
 ```
-Drop documents (PDF / JPG / PNG)  ─►  automatic AI analysis
+Drop documents (PDF / JPG / PNG)  ─►  automatic AI analysis (SEQUENTIAL)
         │
         ▼
-Claude reads each document directly (vision / document input)
-   → transcribes every piece  +  extracts the expense lines (with a confidence level)
+One request per document: Claude reads it directly (vision / document input)
+   → transcribes that piece, line by line
+        │
+        ▼
+One final step: builds the expense lines from all the transcriptions
+   (text only, with a confidence level)
         │
         ▼
 Human review  (Analysis: fix the text · Expense report: fix the data — everything auto-saved)
@@ -59,7 +63,10 @@ Final PDF  =  the expense report  +  all the attachments, in the order you choos
 ```
 
 There is **no external OCR**: each document is sent straight to Claude, which both transcribes it and
-fills in the report. One API, one key.
+fills in the report. One API, one key. The analysis is **sequential** — each document is transcribed
+in its own request, then a single step structures the expense lines from all the transcriptions. This
+keeps every request small and reliable instead of sending every document (and the whole transcription)
+in one oversized call.
 
 ---
 
@@ -155,9 +162,11 @@ it and fills the report. While it works you see a loading indicator.
 
 ### 4. Analysis — review what the AI read
 
-Side-by-side view: the **original document on the left**, the **editable transcription on the right**.
-Fix anything the AI misread, then click **« Regenerate the report »** to recompute the lines from your
-corrected text. Arrow keys ←/→ jump between documents; **« Open »** opens a document in a new tab.
+Side-by-side view: the **original document on the left** (shown in an `<iframe>` for PDFs, an `<img>`
+for images), the **editable transcription on the right**. The transcription keeps the original
+line structure (Claude returns it line by line). Fix anything the AI misread, then click
+**« Regenerate the report »** to recompute the lines from your corrected text. Arrow keys ←/→ jump
+between documents; **« Open »** opens a document in a new tab.
 
 ### 5. Expense report & final PDF
 
@@ -284,8 +293,9 @@ NotesDeFraisBDI/
     server schedules shutdown in ~4 s, and a following `POST /api/ping` (after an F5) cancels it.
   - **Backups**: every save copies the previous `event.json` into `_backups/` (last *N* kept). Older
     events created as `evento.json` are renamed to `event.json` automatically on startup.
-- **Frontend** `src/web/` (vanilla JS): `index.html`, `styles.css`, `app.js`, `i18n.js`. CDNs: `pdf.js`
-  (thumbnails) and `html2canvas` (final PDF). The A4 paginator measures the real available height of
+- **Frontend** `src/web/` (vanilla JS): `index.html`, `styles.css`, `app.js`, `i18n.js`. Local vendor
+  libs (`src/web/vendor/`): `pdf.js` (thumbnails / Signée preview) and `html2canvas` (final PDF).
+  Documents are shown with `<iframe>` (PDF) / `<img>` (images). The A4 paginator measures the real available height of
   the page once it's visible, so the signature block never gets cut.
 
 ## Data model

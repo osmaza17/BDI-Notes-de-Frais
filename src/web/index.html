@@ -8,8 +8,8 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Libre+Baskerville:wght@400;700&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="styles.css" />
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+  <script src="vendor/pdf.min.js"></script>
+  <script src="vendor/html2canvas.min.js"></script>
 </head>
 <body>
   <!-- Banner superior fijo (header + pestañas) -->
@@ -25,13 +25,17 @@
         <span id="estado-servidor" class="estado-servidor desconectado">
           <span class="punto"></span><span class="txt" data-i18n="server.connecting">Connexion…</span>
         </span>
+        <div class="lang-select" id="lang-select">
+          <button class="lang-btn" id="lang-btn" type="button" title="Language" aria-haspopup="listbox" aria-expanded="false">
+            <span class="lang-flag" id="lang-flag-cur"></span>
+            <span class="lang-code" id="lang-code-cur">FR</span>
+            <span class="lang-caret">▾</span>
+          </button>
+          <ul class="lang-menu" id="lang-menu" role="listbox"></ul>
+        </div>
         <button class="sec" id="btn-howto-global"><span data-i18n="howto.btn">❔ How to use</span></button>
-        <select id="sel-idioma" class="sel-idioma" title="Language">
-          <option value="fr">🇫🇷 FR</option>
-          <option value="es">🇪🇸 ES</option>
-          <option value="en">🇬🇧 EN</option>
-        </select>
         <button class="sec" id="btn-tema"><span data-i18n="theme">🌓 Thème</span></button>
+        <button class="sec" id="btn-ajustes" title="Réglages"><span data-i18n="settings.btn">⚙ Réglages</span></button>
       </div>
     </header>
 
@@ -141,6 +145,13 @@
           </div>
         </div>
         <div id="estado-regen" class="muted" style="margin-top:8px"></div>
+      </div>
+      <div class="panel" id="analyse-logs-panel" style="display:none">
+        <div class="panel-head">
+          <h3 style="margin:0" data-i18n="analyse.logsTitle">Journal d'analyse</h3>
+          <button class="sec peque" id="btn-clear-logs" data-i18n="analyse.logsClear">Effacer</button>
+        </div>
+        <pre id="analyse-logs" class="analyse-logs"></pre>
       </div>
       <div id="analyse-lista"></div>
     </section>
@@ -360,6 +371,61 @@
       <div style="text-align:right; margin-top:14px">
         <button class="sec" id="firma-importar" data-i18n="sign.import">+ Importer une autre image</button>
         <input type="file" id="firma-file" accept="image/*" style="display:none" />
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: réglages (clé API + modèle) -->
+  <div id="modal-ajustes" class="modal no-print">
+    <div class="modal-caja">
+      <button class="modal-cerrar" id="ajustes-cerrar" title="Fermer">✕</button>
+      <h2 data-i18n="settings.title">Réglages</h2>
+      <p class="muted" data-i18n="settings.sub">La clé API et le modèle ne quittent jamais ton ordinateur (enregistrés dans .env).</p>
+
+      <div class="campo" style="margin-top:14px">
+        <label data-i18n="settings.apiKey">Clé API Anthropic</label>
+        <div class="fila-inline">
+          <input id="set-apikey" type="password" autocomplete="off" spellcheck="false" data-i18n-ph="settings.apiKeyPh" placeholder="sk-ant-…" />
+          <button class="sec" id="set-apikey-toggle" type="button" title="Afficher / masquer">👁</button>
+        </div>
+        <div id="set-apikey-estado" class="muted" style="margin-top:4px"></div>
+      </div>
+
+      <div class="campo" style="margin-top:14px">
+        <label data-i18n="settings.model">Modèle Anthropic</label>
+        <select id="set-model"></select>
+        <div class="muted" style="margin-top:4px" data-i18n="settings.modelHint">Haiku : rapide et économique. Sonnet : plus précis mais plus lent et plus cher.</div>
+      </div>
+
+      <div class="modal-error" id="ajustes-error"></div>
+      <div class="fila-inline" style="justify-content:space-between; margin-top:18px">
+        <button class="sec" id="set-test" type="button" data-i18n="settings.test">⚡ Tester la connexion</button>
+        <button id="btn-save-ajustes" data-i18n="settings.save">Enregistrer</button>
+      </div>
+      <div id="set-test-estado" class="muted" style="margin-top:8px"></div>
+    </div>
+  </div>
+
+  <!-- Modal: error de IA (clé API / crédits / serveurs Anthropic) -->
+  <div id="modal-error-ia" class="modal no-print">
+    <div class="modal-caja modal-error-ia">
+      <button class="modal-cerrar" id="error-ia-cerrar" title="Fermer">✕</button>
+      <div class="error-ia-cab">
+        <span class="error-ia-icono" id="error-ia-icono">⚠</span>
+        <h2 id="error-ia-titulo"></h2>
+      </div>
+      <p id="error-ia-cuerpo" class="error-ia-cuerpo"></p>
+      <div class="error-ia-solucion">
+        <h4 data-i18n="aiError.howToFix">Comment résoudre</h4>
+        <div id="error-ia-pasos"></div>
+      </div>
+      <details class="error-ia-detalle-box">
+        <summary data-i18n="aiError.technical">Détail technique</summary>
+        <pre id="error-ia-detalle"></pre>
+      </details>
+      <div class="fila-inline" style="justify-content:flex-end; gap:8px; margin-top:18px">
+        <button class="sec" id="error-ia-cerrar2" data-i18n="aiError.close">Fermer</button>
+        <button id="error-ia-accion"></button>
       </div>
     </div>
   </div>

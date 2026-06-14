@@ -14,14 +14,15 @@ const estado = {
   activo: null,
   analizando: false,
   analisisToken: 0,
+  analisisLogs: [],   // journal d'analyse (logs en direct)
+  logSource: null,    // EventSource del stream de logs
   filtro: { texto: '', estados: [] },
 };
 
 const ESTADOS = ['brouillon', 'a_verifier', 'valide', 'envoye', 'rembourse'];
 
 if (window.pdfjsLib) {
-  pdfjsLib.GlobalWorkerOptions.workerSrc =
-    'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+  pdfjsLib.GlobalWorkerOptions.workerSrc = 'vendor/pdf.worker.min.js';
 }
 
 // ---------- Utilidades ----------
@@ -37,9 +38,47 @@ function toast(msg, esError = false) {
 async function api(ruta, opciones = {}) {
   const resp = await fetch('/api' + ruta, { headers: { 'Content-Type': 'application/json' }, ...opciones });
   const json = await resp.json().catch(() => ({}));
-  if (!resp.ok) throw new Error(json.error || `Erreur ${resp.status}`);
+  if (!resp.ok) {
+    const err = new Error(json.error || `Erreur ${resp.status}`);
+    err.tipo = json.tipo;       // tipo de error IA (clave/crédits/serveur…) si el server lo clasificó
+    err.status = resp.status;
+    throw err;
+  }
   return json;
 }
+
+// ------------------------------------------------------------
+//  Ventana de error de IA: clé manquante, crédits épuisés, clé invalide,
+//  limite/serveurs Anthropic… Mensaje claro + cómo résoudre, en un modal
+//  evidente. El `tipo` lo clasifica el servidor (clasificarErrorIA).
+// ------------------------------------------------------------
+const TIPOS_ERROR_IA = new Set(['clave_falta', 'clave_invalida', 'sin_creditos', 'sin_permiso', 'limite', 'sobrecarga', 'servidor', 'red', 'desconocido']);
+const ERROR_IA_ICONO = { clave_falta: '🔑', clave_invalida: '🔑', sin_creditos: '💳', sin_permiso: '🚫', limite: '⏳', sobrecarga: '🛠', servidor: '🛠', red: '📡', desconocido: '⚠' };
+// Acción del botón principal según el tipo; el resto ofrece « Réessayer » si hay retry.
+const ERROR_IA_ACCION = { clave_falta: 'settings', clave_invalida: 'settings', sin_permiso: 'settings', sin_creditos: 'console' };
+let _errorIaRetry = null;
+
+function mostrarErrorIA(e, onRetry) {
+  const tipo = (e && TIPOS_ERROR_IA.has(e.tipo)) ? e.tipo : null;
+  if (!tipo) { toast('Erreur : ' + (e?.message || e), true); return; }  // error no-IA → toast normal
+  _errorIaRetry = onRetry || null;
+  $('#error-ia-icono').textContent = ERROR_IA_ICONO[tipo] || '⚠';
+  $('#error-ia-titulo').textContent = t(`aiError.${tipo}.title`);
+  $('#error-ia-cuerpo').textContent = t(`aiError.${tipo}.body`);
+  const pasos = t(`aiError.${tipo}.steps`).split('\n').filter(Boolean);
+  $('#error-ia-pasos').innerHTML = '<ol>' + pasos.map((p) => `<li>${escapar(p)}</li>`).join('') + '</ol>';
+  $('#error-ia-detalle').textContent = e?.message || '';
+  const accion = ERROR_IA_ACCION[tipo] || 'retry';
+  const btn = $('#error-ia-accion');
+  btn.dataset.accion = accion;
+  if (accion === 'settings') { btn.textContent = t('aiError.openSettings'); btn.style.display = ''; }
+  else if (accion === 'console') { btn.textContent = t('aiError.openConsole'); btn.style.display = ''; }
+  else if (onRetry) { btn.textContent = t('aiError.retry'); btn.style.display = ''; }
+  else { btn.style.display = 'none'; }
+  $('#modal-error-ia').classList.add('show');
+}
+function cerrarErrorIA() { $('#modal-error-ia').classList.remove('show'); }
+
 function leerArchivoBase64(file) {
   return new Promise((resolve, reject) => {
     const r = new FileReader();
@@ -113,13 +152,44 @@ function slugNombre(n) {
     .replace(/[^a-zA-Z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'Personne';
 }
 
-// Enlace al repo + idioma
+// Enlace al repo
 $('#link-repo').href = REPO_URL;
-$('#sel-idioma').value = IDIOMA;
-$('#sel-idioma').addEventListener('change', (e) => {
-  IDIOMA = e.target.value; localStorage.setItem('idioma-ndf', IDIOMA);
+
+// ---- Selector de idioma con banderas SVG (los emoji 🇫🇷 no se ven en Windows) ----
+const LANGS = [
+  { code: 'fr', label: 'Français' },
+  { code: 'es', label: 'Español' },
+  { code: 'en', label: 'English' },
+];
+const FLAGS = {
+  fr: '<svg viewBox="0 0 3 2" preserveAspectRatio="none"><rect width="3" height="2" fill="#fff"/><rect width="1" height="2" fill="#0055A4"/><rect x="2" width="1" height="2" fill="#EF4135"/></svg>',
+  es: '<svg viewBox="0 0 3 2" preserveAspectRatio="none"><rect width="3" height="2" fill="#AA151B"/><rect y="0.5" width="3" height="1" fill="#F1BF00"/></svg>',
+  en: '<svg viewBox="0 0 60 30" preserveAspectRatio="none"><rect width="60" height="30" fill="#012169"/><path d="M0,0 60,30 M60,0 0,30" stroke="#fff" stroke-width="6"/><path d="M0,0 60,30 M60,0 0,30" stroke="#C8102E" stroke-width="3"/><path d="M30,0 V30 M0,15 H60" stroke="#fff" stroke-width="10"/><path d="M30,0 V30 M0,15 H60" stroke="#C8102E" stroke-width="6"/></svg>',
+};
+function pintarLangActual() {
+  $('#lang-flag-cur').innerHTML = FLAGS[IDIOMA] || '';
+  $('#lang-code-cur').textContent = (IDIOMA || 'fr').toUpperCase();
+}
+function construirMenuLang() {
+  const menu = $('#lang-menu');
+  menu.innerHTML = LANGS.map((l) =>
+    `<li role="option" data-code="${l.code}" class="${l.code === IDIOMA ? 'sel' : ''}"><span class="lang-flag">${FLAGS[l.code]}</span><span>${escapar(l.label)}</span></li>`).join('');
+  menu.querySelectorAll('li').forEach((li) => li.addEventListener('click', () => elegirIdioma(li.dataset.code)));
+}
+function abrirMenuLang(abrir) {
+  const menu = $('#lang-menu'); const btn = $('#lang-btn');
+  const open = abrir ?? !menu.classList.contains('open');
+  menu.classList.toggle('open', open);
+  btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+}
+function elegirIdioma(code) {
+  IDIOMA = code; localStorage.setItem('idioma-ndf', IDIOMA);
+  pintarLangActual(); construirMenuLang(); abrirMenuLang(false);
   aplicarIdioma(); reRenderTodo();
-});
+}
+$('#lang-btn').addEventListener('click', (e) => { e.stopPropagation(); abrirMenuLang(); });
+document.addEventListener('click', (e) => { if (!e.target.closest('#lang-select')) abrirMenuLang(false); });
+pintarLangActual(); construirMenuLang();
 function reRenderTodo() {
   pintarEstado($('#estado-servidor').classList.contains('conectado'));
   poblarSelectsSeccion();
@@ -165,6 +235,81 @@ $('#btn-tema').addEventListener('click', () => {
   const nuevo = document.documentElement.dataset.theme === 'claro' ? 'oscuro' : 'claro';
   document.documentElement.dataset.theme = nuevo;
   localStorage.setItem('tema-ndf', nuevo);
+});
+
+// ---------- Réglages (clé API + modèle) ----------
+async function abrirAjustes() {
+  $('#ajustes-error').textContent = '';
+  $('#set-test-estado').textContent = '';
+  $('#set-apikey').value = '';
+  $('#set-apikey').type = 'password';
+  $('#set-apikey-toggle').textContent = '👁';
+  delete $('#set-apikey').dataset.fromStore;
+  try {
+    const s = await api('/settings');
+    const sel = $('#set-model');
+    sel.innerHTML = s.models.map((m) => `<option value="${escapar(m.id)}">${escapar(m.label)}</option>`).join('');
+    sel.value = s.model;
+    $('#set-apikey').placeholder = s.apiKeySet ? s.apiKeyMask : 'sk-ant-…';
+    $('#set-apikey-estado').textContent = s.apiKeySet ? t('settings.keySet') : t('settings.keyMissing');
+    $('#set-apikey-estado').className = 'muted' + (s.apiKeySet ? '' : ' set-key-missing');
+  } catch (e) { $('#ajustes-error').textContent = e.message; }
+  $('#modal-ajustes').classList.add('show');
+}
+function cerrarAjustes() { $('#modal-ajustes').classList.remove('show'); }
+function cuerpoAjustes() {
+  const body = { model: $('#set-model').value };
+  const key = $('#set-apikey').value.trim();
+  if (key) body.apiKey = key;
+  return body;
+}
+$('#btn-ajustes').addEventListener('click', abrirAjustes);
+$('#ajustes-cerrar').addEventListener('click', cerrarAjustes);
+$('#modal-ajustes').addEventListener('click', (e) => { if (e.target.id === 'modal-ajustes') cerrarAjustes(); });
+
+// Modal de error de IA (clé / crédits / serveurs Anthropic).
+$('#error-ia-cerrar').addEventListener('click', cerrarErrorIA);
+$('#error-ia-cerrar2').addEventListener('click', cerrarErrorIA);
+$('#modal-error-ia').addEventListener('click', (e) => { if (e.target.id === 'modal-error-ia') cerrarErrorIA(); });
+$('#error-ia-accion').addEventListener('click', () => {
+  const accion = $('#error-ia-accion').dataset.accion;
+  if (accion === 'settings') { cerrarErrorIA(); abrirAjustes(); }
+  else if (accion === 'console') { window.open('https://console.anthropic.com/', '_blank', 'noopener'); }
+  else { const r = _errorIaRetry; cerrarErrorIA(); if (typeof r === 'function') r(); }
+});
+$('#set-apikey-toggle').addEventListener('click', async () => {
+  const inp = $('#set-apikey');
+  const btn = $('#set-apikey-toggle');
+  if (inp.type === 'password') {
+    // Revelar: si el campo está vacío, trae la clave guardada del servidor para mostrarla.
+    if (!inp.value) {
+      try { const r = await api('/settings/revelar'); if (r.apiKey) { inp.value = r.apiKey; inp.dataset.fromStore = '1'; } }
+      catch (e) { toast('Erreur : ' + e.message, true); return; }
+    }
+    inp.type = 'text'; btn.textContent = '🙈';
+  } else {
+    inp.type = 'password'; btn.textContent = '👁';
+    // Si la clave la trajimos del servidor (no la escribió el usuario), no la dejamos en el campo.
+    if (inp.dataset.fromStore === '1') { inp.value = ''; delete inp.dataset.fromStore; }
+  }
+});
+// Si el usuario escribe, deja de ser la clave traída del servidor (no la borramos al ocultar).
+$('#set-apikey').addEventListener('input', () => { delete $('#set-apikey').dataset.fromStore; });
+$('#set-test').addEventListener('click', async () => {
+  const est = $('#set-test-estado');
+  est.className = 'muted'; est.innerHTML = '<span class="spinner"></span> ' + t('settings.testing');
+  try {
+    await api('/settings/test', { method: 'POST', body: JSON.stringify(cuerpoAjustes()) });
+    est.className = 'muted set-ok'; est.textContent = t('settings.testOk');
+  } catch (e) { est.className = 'muted set-err'; est.textContent = t('settings.testFail') + ' ' + e.message; }
+});
+$('#btn-save-ajustes').addEventListener('click', async () => {
+  $('#ajustes-error').textContent = '';
+  try {
+    await api('/settings', { method: 'PUT', body: JSON.stringify(cuerpoAjustes()) });
+    toast(t('settings.saved'));
+    cerrarAjustes();
+  } catch (e) { $('#ajustes-error').textContent = e.message; }
 });
 
 // ============================================================
@@ -408,7 +553,7 @@ $('#personne-rib').addEventListener('change', async () => {
     $('#p-banque').value = r.banque || '';
     $('#p-domiciliation').value = r.domiciliation || '';
     est.textContent = t('person.extractOk');
-  } catch (e) { est.textContent = 'Erreur : ' + e.message; }
+  } catch (e) { est.textContent = 'Erreur : ' + e.message; mostrarErrorIA(e); }
   $('#personne-rib').value = '';
 });
 
@@ -564,15 +709,15 @@ function tarjetaDoc(nom, conAcciones) {
 }
 
 function abrirVisor(nom) {
-  const url = urlArchivo(estado.activo.id, nom);
   $('#doc-titulo').textContent = nom;
-  $('#doc-visor').innerHTML = esImagen(nom) ? `<img src="${url}" alt="${escapar(nom)}" />` : `<iframe src="${url}" title="${escapar(nom)}"></iframe>`;
   $('#modal-doc').classList.add('show');
+  montarOriginal($('#doc-visor'), estado.activo.id, nom);   // imagen → <img>, PDF → <iframe>
 }
 async function reextraerDocumento(nom, btn) {
   if (!estado.activo) return;
   const original = btn.innerHTML;
   btn.disabled = true; btn.innerHTML = `<span class="spinner"></span> ${t('analyse.retrying')}`;
+  abrirLogStream(estado.activo.id);   // logs en directo de la relectura
   try {
     const r = await api(`/eventos/${estado.activo.id}/archivos/${encodeURIComponent(nom)}/reextraer`, { method: 'POST' });
     estado.activo.ocr = estado.activo.ocr || {};
@@ -580,8 +725,10 @@ async function reextraerDocumento(nom, btn) {
     renderAnalyse();
     toast(t('analyse.retried'));
   } catch (e) {
-    toast(e.message, true);
     btn.disabled = false; btn.innerHTML = original;
+    mostrarErrorIA(e, () => reextraerDocumento(nom, btn));
+  } finally {
+    cerrarLogStream();
   }
 }
 async function abrirCarpeta(nom) {
@@ -589,7 +736,7 @@ async function abrirCarpeta(nom) {
     await api(`/eventos/${estado.activo.id}/archivos/${encodeURIComponent(nom)}/abrir-carpeta`, { method: 'POST' });
   } catch (e) { toast(e.message, true); }
 }
-function cerrarVisor() { $('#modal-doc').classList.remove('show'); $('#doc-visor').innerHTML = ''; }
+function cerrarVisor() { $('#modal-doc').classList.remove('show'); $('#doc-visor').classList.remove('pdf-render'); $('#doc-visor').innerHTML = ''; }
 $('#doc-cerrar').addEventListener('click', cerrarVisor);
 $('#modal-doc').addEventListener('click', (e) => { if (e.target.id === 'modal-doc') cerrarVisor(); });
 
@@ -631,6 +778,42 @@ async function pintarMiniatura(cont, id, nom) {
   cont.innerHTML = '<span class="icono-doc">📄</span>';
 }
 
+// Renderiza TODAS las páginas de un PDF en canvas dentro de `cont`. NO usa <iframe>:
+// así nunca se dispara la descarga del navegador (ajuste « ouvrir les PDF en externe »).
+async function pintarVisorPDF(cont, url) {
+  const pdf = await pdfjsLib.getDocument(url).promise;
+  cont.classList.add('pdf-render');
+  cont.innerHTML = '';
+  for (let n = 1; n <= pdf.numPages; n++) {
+    const page = await pdf.getPage(n);
+    const v0 = page.getViewport({ scale: 1 });
+    const ancho = cont.clientWidth || 700;            // si el panel está oculto, ancho razonable por defecto
+    const scale = Math.max(0.2, Math.min(2.5, ancho / v0.width));
+    const vp = page.getViewport({ scale });
+    const canvas = document.createElement('canvas');
+    canvas.className = 'pdf-pagina';
+    canvas.width = vp.width; canvas.height = vp.height;
+    await page.render({ canvasContext: canvas.getContext('2d'), viewport: vp }).promise;
+    cont.appendChild(canvas);
+  }
+}
+
+// Coloca la previsualización de un documento en `cont`: <img> para imágenes, <iframe> para PDF
+// (el navegador lo renderiza inline; el server sirve los archivos con Content-Disposition: inline).
+function montarOriginal(cont, id, nom) {
+  const url = urlArchivo(id, nom);
+  cont.classList.remove('pdf-render');
+  cont.innerHTML = '';
+  if (esImagen(nom)) { const img = new Image(); img.src = url; img.alt = nom; cont.appendChild(img); return; }
+  if (/\.pdf$/i.test(nom)) {
+    const iframe = document.createElement('iframe');
+    iframe.src = url; iframe.title = nom;
+    cont.appendChild(iframe);
+    return;
+  }
+  cont.innerHTML = '<div class="orig-vacio"><span class="icono-doc">📄</span></div>';
+}
+
 // Drag & drop sobre la zona de tarjetas + botón añadir
 ['dragover', 'drop'].forEach((ev) => window.addEventListener(ev, (e) => { if (!e.target.closest('.dropzone-cards, .dropzone-signee, .dropzone-crear')) e.preventDefault(); }));
 const zonaCards = $('#doc-cards');
@@ -662,11 +845,36 @@ async function subirArchivos(files) {
   lanzarAnalisis();
 }
 
+// ---- Journal d'analyse : logs en direct del servidor (SSE) ----
+function renderLogs() {
+  const panel = $('#analyse-logs-panel'); const pre = $('#analyse-logs');
+  if (!panel || !pre) return;
+  if (!estado.analisisLogs.length) { panel.style.display = 'none'; pre.textContent = ''; return; }
+  panel.style.display = '';
+  pre.textContent = estado.analisisLogs
+    .map((l) => `[${new Date(l.t).toLocaleTimeString('fr-FR')}] ${l.msg}`).join('\n');
+  pre.scrollTop = pre.scrollHeight;
+}
+function cerrarLogStream() { if (estado.logSource) { estado.logSource.close(); estado.logSource = null; } }
+function abrirLogStream(id) {
+  cerrarLogStream();
+  if (typeof EventSource === 'undefined') return;
+  try {
+    const es = new EventSource(`/api/eventos/${id}/logs`);
+    es.onmessage = (e) => { try { estado.analisisLogs.push(JSON.parse(e.data)); renderLogs(); } catch {} };
+    estado.logSource = es; // se reintenta solo; se cierra al terminar el análisis
+  } catch {}
+}
+$('#btn-clear-logs').addEventListener('click', () => { estado.analisisLogs = []; renderLogs(); });
+
 // ---- Análisis automático (cancelable) ----
 async function lanzarAnalisis() {
   if (!estado.activo || !estado.activo.archivos.length) return;
   const token = ++estado.analisisToken;
   estado.analizando = true;
+  estado.analisisLogs = [];                 // limpia el journal de la corrida anterior
+  abrirLogStream(estado.activo.id);         // escucha los logs del servidor en directo
+  renderLogs();
   const est = $('#estado-analisis');
   if (est) est.textContent = t('analysing');
   renderAnalyse();
@@ -677,8 +885,10 @@ async function lanzarAnalisis() {
     if (est) est.textContent = t('analysed'); toast(t('analysed'));
   } catch (e) {
     if (token !== estado.analisisToken) return;
-    if (est) est.textContent = 'Erreur : ' + e.message; toast('Erreur : ' + e.message, true);
+    if (est) est.textContent = 'Erreur : ' + e.message;
+    mostrarErrorIA(e, lanzarAnalisis);
   } finally {
+    cerrarLogStream();
     if (token === estado.analisisToken) { estado.analizando = false; renderAnalyse(); renderNDF(); }
   }
 }
@@ -687,6 +897,7 @@ async function lanzarAnalisis() {
 //  ANALYSE
 // ============================================================
 function renderAnalyse() {
+  renderLogs();
   const cont = $('#analyse-lista');
   const a = estado.activo;
   if (!a || a.archivos.length === 0) { cont.innerHTML = `<p class="vacio">${escapar(t('analyse.none'))}</p>`; return; }
@@ -695,7 +906,6 @@ function renderAnalyse() {
     const item = document.createElement('div');
     item.className = 'analyse-item';
     item.dataset.nom = nom;
-    const orig = esImagen(nom) ? `<img src="${urlArchivo(a.id, nom)}" alt="${escapar(nom)}" />` : `<iframe src="${urlArchivo(a.id, nom)}" title="${escapar(nom)}"></iframe>`;
     const tiene = a.ocr && typeof a.ocr[nom] === 'string';
     let panel;
     if (estado.analizando && !tiene) panel = `<div class="cargando"><div class="loader"></div><div class="txt-cargando">${escapar(t('analyse.loadingDoc'))}</div></div>`;
@@ -708,7 +918,7 @@ function renderAnalyse() {
         <button class="sec peque btn-reextraer">${t('analyse.retry')}</button>
       </div>
       <div class="analyse-split">
-        <div class="orig">${orig}</div>
+        <div class="orig"></div>
         <div class="txt">${panel}</div>
       </div>`;
     const ta = item.querySelector('textarea');
@@ -717,6 +927,7 @@ function renderAnalyse() {
     item.querySelector('.btn-reextraer').addEventListener('click', (e) => reextraerDocumento(nom, e.currentTarget));
     conectarNombreEditable(item.querySelector('.nombre-doc'), nom);
     cont.appendChild(item);
+    montarOriginal(item.querySelector('.orig'), a.id, nom);   // imagen → <img>, PDF → <iframe>
   }
 }
 
@@ -1078,7 +1289,6 @@ function renderSignee() {
     return;
   }
   const url = `/api/eventos/${a.id}/signee?t=${Date.now()}`;
-  const preview = esImagen(f) ? `<img src="${url}" alt="${escapar(f)}" />` : `<iframe src="${url}" title="${escapar(f)}"></iframe>`;
   cont.innerHTML = `
     <div class="signee-actual">
       <div class="signee-head">
@@ -1090,8 +1300,12 @@ function renderSignee() {
           <button class="peligro peque" id="btn-del-signee">${t('signee.delete')}</button>
         </div>
       </div>
-      <div class="signee-preview">${preview}</div>
+      <div class="signee-preview"></div>
     </div>`;
+  // PDF/imagen sin <iframe> → no fuerza descarga. (f es el nombre real con su extensión.)
+  if (esImagen(f)) { const img = new Image(); img.src = url; img.alt = f; cont.querySelector('.signee-preview').appendChild(img); }
+  else if (/\.pdf$/i.test(f) && window.pdfjsLib) { pintarVisorPDF(cont.querySelector('.signee-preview'), url).catch(() => {}); }
+  else { cont.querySelector('.signee-preview').innerHTML = '<div class="orig-vacio"><span class="icono-doc">📄</span></div>'; }
   cont.querySelector('#btn-carpeta-signee').addEventListener('click', async () => {
     try { await api(`/eventos/${a.id}/signee/abrir-carpeta`, { method: 'POST' }); }
     catch (e) { toast(e.message, true); }
@@ -1301,7 +1515,7 @@ $('#modal-howto').addEventListener('click', (e) => { if (e.target.id === 'modal-
 //  Atajos de teclado
 // ============================================================
 document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape') { cerrarAyuda(); cerrarVisor(); cerrarFirma(); cerrarCrear(); cerrarPersonne(); return; }
+  if (e.key === 'Escape') { cerrarAyuda(); cerrarVisor(); cerrarFirma(); cerrarCrear(); cerrarPersonne(); cerrarAjustes(); abrirMenuLang(false); return; }
   const ctrl = e.ctrlKey || e.metaKey;
   if (ctrl && e.key.toLowerCase() === 's') { e.preventDefault(); if (estado.activo?.datos) { clearTimeout(tDatos); api(`/eventos/${estado.activo.id}/datos`, { method: 'PUT', body: JSON.stringify(estado.activo.datos) }).then(() => indicar(t('ndf.saved'))).catch(() => {}); } return; }
   if (ctrl && e.key.toLowerCase() === 'p') { if (estado.activo?.datos && $('#vista-ndf').classList.contains('activa')) { e.preventDefault(); generarPDF(); } return; }

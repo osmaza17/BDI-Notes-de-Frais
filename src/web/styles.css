@@ -119,12 +119,42 @@ header.app .barra-acciones { margin-left: auto; }
 #aviso-servidor h3 { margin: 0 0 10px; color: var(--rojo); }
 #aviso-servidor p { margin: 6px 0; }
 
-/* ---------- Selector de idioma ---------- */
-.sel-idioma {
-  width: auto; background: rgba(255,255,255,.12); color: #fff; border: 1px solid rgba(255,255,255,.25);
-  font-size: 13px; font-weight: 600; padding: 6px 8px; border-radius: 6px; cursor: pointer;
+/* ---------- Selector de idioma (custom, banderas SVG) ---------- */
+/* En Windows los emoji de bandera no se renderizan, por eso se usan SVG. */
+.lang-select { position: relative; }
+.lang-btn {
+  display: flex; align-items: center; gap: 6px;
+  background: rgba(255,255,255,.12); color: #fff; border: 1px solid rgba(255,255,255,.25);
+  font-size: 13px; font-weight: 600; padding: 5px 8px; border-radius: 6px; cursor: pointer;
 }
-.sel-idioma option { color: #1f3044; }
+.lang-btn:hover { background: rgba(255,255,255,.22); }
+.lang-flag {
+  width: 20px; height: 14px; border-radius: 2px; overflow: hidden; flex: none;
+  display: inline-flex; box-shadow: 0 0 0 1px rgba(0,0,0,.18);
+}
+.lang-flag svg { width: 100%; height: 100%; display: block; }
+.lang-caret { font-size: 10px; opacity: .8; }
+.lang-menu {
+  position: absolute; top: calc(100% + 6px); right: 0; z-index: 80;
+  list-style: none; margin: 0; padding: 6px; min-width: 165px;
+  background: var(--panel); color: var(--texto); border: 1px solid var(--borde);
+  border-radius: 8px; box-shadow: var(--sombra-arrastre); display: none;
+}
+.lang-menu.open { display: block; }
+.lang-menu li {
+  display: flex; align-items: center; gap: 8px; padding: 8px 10px;
+  border-radius: 6px; cursor: pointer; font-size: 14px;
+}
+.lang-menu li:hover { background: var(--azul-claro); }
+.lang-menu li.sel { font-weight: 700; }
+
+/* ---------- Journal d'analyse (logs en direct) ---------- */
+.analyse-logs {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Courier New", monospace;
+  font-size: 12.5px; line-height: 1.55; margin: 0; max-height: 260px; overflow: auto;
+  background: #0c1320; color: #cfe3ff; border-radius: 8px; padding: 12px 14px;
+  white-space: pre-wrap; word-break: break-word;
+}
 
 /* ---------- "How to use" (destacado) ---------- */
 .panel-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
@@ -250,10 +280,31 @@ header.app .barra-acciones { margin-left: auto; }
 .modal-error:not(:empty) { background: var(--rojo-claro); border: 1px solid var(--rojo);
   padding: 8px 10px; margin-top: 12px; }
 
+/* Modal de error de IA (clé / crédits / serveurs Anthropic) */
+.modal-error-ia { max-width: 540px; border-top: 5px solid var(--rojo); }
+.error-ia-cab { display: flex; align-items: center; gap: 12px; }
+.error-ia-cab h2 { margin: 0; }
+.error-ia-icono { font-size: 30px; line-height: 1; flex: none; }
+.error-ia-cuerpo { margin: 12px 0 0; color: var(--texto); }
+.error-ia-solucion { margin-top: 16px; background: var(--hover); border: 1px solid var(--borde);
+  border-radius: 8px; padding: 12px 14px; }
+.error-ia-solucion h4 { margin: 0 0 4px; color: var(--azul); }
+.error-ia-solucion ol { margin: 6px 0 0; padding-left: 20px; }
+.error-ia-solucion li { margin: 3px 0; }
+.error-ia-detalle-box { margin-top: 14px; }
+.error-ia-detalle-box summary { cursor: pointer; font-size: 13px; color: var(--gris); }
+.error-ia-detalle-box pre { margin: 8px 0 0; background: var(--gris-claro); border: 1px solid var(--borde);
+  border-radius: 6px; padding: 8px 10px; font-size: 12px; white-space: pre-wrap; word-break: break-word;
+  max-height: 160px; overflow: auto; }
+
 /* Fila con select + botón en línea (modal de creación) */
 .fila-inline { display: flex; gap: 8px; align-items: center; }
-.fila-inline select { flex: 1; }
+.fila-inline select, .fila-inline input { flex: 1; }
 .fila-inline button { flex: none; white-space: nowrap; }
+
+/* Réglages : estados de la prueba de conexión y de la clave */
+.set-ok { color: #2e9e6b; font-weight: 600; }
+.set-err, .set-key-missing { color: var(--rojo); font-weight: 600; }
 
 /* Filas de la base de personas */
 .personne-row {
@@ -518,6 +569,16 @@ button.grande { font-size: 15px; padding: 12px 20px; }
 .signee-preview { background: #fff; border: 1px solid var(--borde); border-radius: 8px; overflow: hidden; }
 .signee-preview iframe { width: 100%; height: 70vh; border: 0; display: block; }
 .signee-preview img { display: block; max-width: 100%; margin: 0 auto; }
+.signee-preview.pdf-render { max-height: 70vh; overflow: auto; background: #525659; padding: 10px; }
+
+/* Previsualización de PDF renderizada con pdf.js (sin <iframe> → no fuerza descarga del navegador) */
+.pdf-render { overflow: auto; background: #525659; }
+.pdf-pagina { display: block; width: 100%; height: auto; margin: 0 auto 6px; background: #fff;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, .4); }
+.pdf-render .pdf-pagina:last-child { margin-bottom: 0; }
+.doc-visor.pdf-render { padding: 10px; }
+.orig-vacio { display: flex; align-items: center; justify-content: center; width: 100%; height: 100%; }
+.orig-vacio .icono-doc { font-size: 44px; color: var(--gris); }
 
 /* ============================================================
    HOJA NDF — réplica fiel del modèle officiel du BDI.
