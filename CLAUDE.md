@@ -16,6 +16,10 @@ carpeta. El repositorio es **público**, así que nada sensible debe subirse (ve
 ## Portabilidad (requisito)
 
 La app debe seguir funcionando **copiando la carpeta a cualquier ordenador** con Node ≥ 20. Por eso:
+- **Motor por defecto = Claude Code instalado en el ordenador** (no la API). El único requisito extra
+  es tener **Claude Code instalado y logueado** (`claude login`); la app **autodetecta** el binario
+  `claude` del PATH. Si se mueve la carpeta a un PC sin Claude Code, la app solo analiza si se activa
+  el **respaldo a la API** en Réglages (`API_FALLBACK`); si no, muestra error claro.
 - **Todas las rutas son relativas** (`path.join(__dirname, …)`), nunca absolutas. `src/server.js`
   calcula `RAIZ = path.join(__dirname, '..')` y carga el `.env` de la raíz con
   `dotenv.config({ path })` (independiente del cwd).
@@ -33,7 +37,8 @@ raíz/
   README.md · CLAUDE.md · .env · .env.example
   .gitignore · package.json · package-lock.json · node_modules/   (deben quedarse en la raíz)
   src/
-    server.js          ← backend (Express + Anthropic SDK + pdf-lib)
+    server.js          ← backend (Express + pdf-lib; enruta IA a Claude Code o API)
+    claudeCode.js      ← motor por DEFECTO: instancias headless `claude -p` (ventana invisible)
     Start.vbs          ← lanzador oculto (la raíz es su carpeta padre)
     web/               ← frontend (index.html, styles.css, app.js, i18n.js, logo-bdi.png)
   data/                ← datos en runtime (contenido gitignored)
@@ -49,32 +54,75 @@ raíz/
 ## Pipeline
 
 ```
-Subir documentos (PDF/JPG/PNG)  →  análisis AUTOMÁTICO (SECUENCIAL)
+Subir documentos (PDF/JPG/PNG)  →  análisis AUTOMÁTICO (INCREMENTAL, paralelo acotado)
         ↓
-Para CADA documento, una petición propia: Claude lo lee DIRECTAMENTE (visión / document input)
-   → transcribe esa pieza (`transcribirDocumento`)
+Para CADA documento, UNA sola petición que lo hace TODO de ese documento (`analizarDocumento`):
+   Claude lo lee DIRECTAMENTE (Read / visión) → transcribe esa pieza Y extrae SUS líneas de la NDF
         ↓
-UN solo paso final: estructura las líneas de la NDF a partir de TODAS las transcripciones
-   (`estructurarDesdeTextos`, solo texto, con nivel de confianza y fichiers_source)
+En cuanto un documento termina se EMITE en directo (SSE `doc`): su transcripción + sus líneas se
+   añaden a la NDF al instante, sin esperar al resto (resultados aparecen documento a documento)
         ↓
 Revisión humana (Analyse: corregir texto · Note de Frais: corregir datos, todo autoguardado)
         ↓
 PDF FINAL = NDF (rasterizada) + adjuntos (pdf-lib), en el orden elegido por el tesorero
 ```
 
-**No se usa OCR externo.** El documento se envía directamente a Claude (un paso, una clave).
+**No se usa OCR externo.** Claude lee el documento directamente.
 
-**Análisis SECUENCIAL (importante):** `analizarConClaude` NO manda todos los documentos en una
-sola petición. Transcribe **doc por doc** (`transcribirDocumento`, una petición por fichero) y
-luego hace **un único** paso de estructuración (`estructurarDesdeTextos`). Motivo: enviar todo de
-golpe hinchaba la entrada (N PDFs/imágenes en base64) y la salida (todo el texto junto), provocando
-JSON truncado (`Unterminated string`) o cortes de conexión. Con peticiones pequeñas cada llamada es
-fiable. `max_tokens: 16000` (no-streaming) por llamada; ambos modelos admiten hasta 64K de salida.
+**Motor de IA (importante):** por defecto se usa **Claude Code headless** (`claude -p`), no la API.
+`motorActivo()` (en `server.js`) decide: `'claude_code'` si el binario `claude` está en el PATH
+(preferente **siempre**); si no, `'api'` solo cuando `apiFallback` está activo **y** hay clave; si no,
+`null` → error claro (`claude_code_falta`/`clave_falta`). El módulo **`src/claudeCode.js`** encapsula
+el CLI (réplica del patrón de los proyectos `youtube-summarizer`/`linkedin-summarizer` del usuario):
+- Invocación `claude -p --model <alias> --output-format json`; **prompt por stdin** (no argv).
+  Alias: `claude-haiku-4-5`→`haiku`, `claude-sonnet-4-6`→`sonnet` (`aliasModelo`).
+- **Ventana INVISIBLE en Windows**: `spawn(..., { windowsHide: true })` (equivale a CREATE_NO_WINDOW).
+  Si el binario fuese `.cmd`/`.ps1` se envuelve en `cmd.exe /c` (también con windowsHide); un `.exe`
+  se lanza directo. En este PC `claude` es `…/.local/bin/claude.exe`.
+- **Fuerza la SUSCRIPCIÓN, no la API**: `entornoSinClaves()` borra `ANTHROPIC_API_KEY` y
+  `ANTHROPIC_AUTH_TOKEN` del entorno del hijo (si las heredara, el CLI facturaría la API).
+- **cwd = carpeta temporal vacía** (`os.tmpdir()`, se borra al acabar) → no carga el `CLAUDE.md` del
+  proyecto. Los documentos a leer se **copian** dentro de ese cwd con nombre simple (`document<ext>`,
+  `rib<ext>`) y la instancia los lee con su herramienta **`Read`** (soporta PDF e imágenes),
+  pre-autorizada con `--allowedTools Read --max-turns 6`.
+- **Salida estructurada**: el CLI **no** fuerza json_schema. Se pide el formato en el prompt
+  (`FORMATO_DOC_COMPLETO`/`FORMATO_TRANSCRIPCION`/`FORMATO_LIGNES`/`FORMATO_RIB`) y se parsea con
+  **`parsearJSONlax`** (quita fences ```` ```json ````, recorta al primer `{…}`/`[…]`). El modelo
+  suele envolver el JSON en fences.
+- **Errores**: `class ErrorClaudeCode { tipo }` con tipos estables `claude_code_falta|auth|timeout|
+  salida|error`; `clasificarErrorIA` los respeta y el frontend los traduce (`aiError.claude_code_*`).
+  El **límite semanal** de la suscripción llega como 429 con «weekly limit» → tipo `límite`; entonces
+  el análisis NO funciona con Claude Code hasta que el límite se reinicia (o se activa el respaldo API).
 
-**Reintento por documento** (`transcribirConReintento`): si la lectura de un documento falla (error
-de la API) o devuelve **0 caracteres**, se reintenta **una** segunda vez en Anthropic. Si el segundo
-intento también falla/vacío, se lanza un error → el endpoint `/analizar` responde 500 y el frontend
-muestra la **ventana flotante de error**. Cada intento se registra en el Journal d'analyse.
+Las funciones de IA (`analizarDocumento`, `transcribirDocumento`, `estructurarDesdeTextos`,
+`extraerRIB`) tienen **rama CLI** (por defecto) y **rama API** (fallback) según `motorActivo()`.
+
+**Análisis INCREMENTAL + paralelo acotado (importante):** `analizarConClaude` procesa los documentos
+con un **pool de `CONCURRENCIA_ANALISIS` workers** (por defecto **3**, `ANALISIS_CONCURRENCIA` en
+`.env`; pon **1** para estrictamente secuencial). Para cada documento, **UNA sola petición**
+(`analizarDocumento`) lo lee, lo transcribe Y extrae **sus** líneas de la NDF en una pasada; en cuanto
+ese documento termina se empuja en directo (`onDoc` → SSE `doc`) y sus líneas se añaden a la NDF **sin
+esperar al resto**. Así los resultados aparecen documento a documento. Motivo del cambio: el cuello de
+botella es la **latencia de la API** (un `claude -p` vacío tarda ~2 s, pero leer+procesar un documento
+20-160 s), no la CPU local → varios en paralelo **solapan** esas esperas y dividen el tiempo total. El
+resultado FINAL que se persiste va **reordenado** por orden de documento (los workers acaban en
+desorden) y se reemite por SSE (`datos`) + va en la respuesta HTTP. Cada `analizarDocumento` fuerza
+`fichiers_source = [nombre]` (el modelo solo ve un `document.ext`) y normaliza IVA/importe
+(`normalizarLigne`: `taux_tva=0`, `montant_ttc=prix_ht`). Regla en el prompt: **un ticket/factura = una
+sola línea con el total** (no itemizar artículos). `max_tokens: 16000` solo en la rama API.
+
+**Por qué una sola llamada por documento:** enviar TODOS los documentos en una petición hinchaba
+entrada (N base64) y salida (todo el texto junto) → JSON truncado / cortes. Una llamada pequeña por
+documento es fiable, y combinar transcripción+estructuración en esa misma llamada evita una segunda
+petición por documento (más rápido). `estructurarDesdeTextos` (solo texto, sobre TODAS las
+transcripciones) ya **no** se usa en el análisis; queda para `/regenerar` (re-extraer desde el texto
+ya editado a mano). `transcribirDocumento` (solo transcripción) queda para `/reextraer` (botón
+« Releer ce document »).
+
+**Reintento por documento** (`analizarDocumentoConReintento`): si el análisis de un documento falla o
+no devuelve transcripción (**0 caracteres**), se reintenta **una** segunda vez. Si el segundo intento
+también falla/vacío, se lanza un error → el endpoint `/analizar` responde 500 y el frontend muestra la
+**ventana flotante de error**. Cada intento se registra en el Journal d'analyse.
 
 **Transcripción por líneas (preservar estructura):** el esquema de salida pide `transcription`
 como **array de strings** (una por línea visible del documento → `ESQUEMA_TRANSCRIPCION_CAMPO`);
@@ -83,16 +131,20 @@ estructura (tabla, bloques) en el `<textarea>` de Analyse en vez de un párrafo 
 sigue siendo un **string** (ahora con saltos de línea); el resto del pipeline no cambia.
 
 **Modelo:** por defecto `claude-haiku-4-5` (configurable con `ANTHROPIC_MODEL` en `.env` **o desde
-el panel Réglages ⚙**, que lo cambia en caliente y lo persiste en `.env`). Modelos ofrecidos en la
-UI: `claude-haiku-4-5` y `claude-sonnet-4-6` (`MODELOS` en `server.js`).
-**Haiku no admite `effort`** → `outputConfig()` lo omite calculando `/haiku/i.test(modeloClaude)`.
-**Clave/modelo en caliente:** `anthropicApiKey`, `modeloClaude` y el cliente `anthropic` son `let`;
-`PUT /api/settings` los actualiza, recrea el cliente y reescribe `.env` (`actualizarEnv`) sin reiniciar.
-La salida estructurada (`output_config.format` json_schema) sí funciona en Haiku 4.5.
+el panel Réglages ⚙**, que lo cambia en caliente y lo persiste en `.env`). Vale para ambos motores
+(se mapea a alias del CLI). Modelos ofrecidos en la UI: `claude-haiku-4-5` y `claude-sonnet-4-6`
+(`MODELOS` en `server.js`).
+**Solo rama API:** `max_tokens: 16000`/`1500` y `output_config.format` json_schema (Haiku no admite
+`effort` → `outputConfig()` lo omite con `/haiku/i.test(modeloClaude)`). La rama CLI no usa estos knobs.
+**Estado en caliente:** `anthropicApiKey`, `modeloClaude`, `apiFallback` y el cliente `anthropic` son
+`let`; `PUT /api/settings` los actualiza, recrea el cliente y reescribe `.env` (`actualizarEnv`:
+`ANTHROPIC_API_KEY`/`ANTHROPIC_MODEL`/`API_FALLBACK`) sin reiniciar. La detección de `claude` se cachea
+(`rutaClaude`/`versionClaude`): si instalas Claude Code con la app abierta, reinicia el servidor.
 
 ## Arquitectura
 
-- **Backend** `src/server.js`: Node + Express, sin build. `@anthropic-ai/sdk` + `pdf-lib`.
+- **Backend** `src/server.js`: Node + Express, sin build. `pdf-lib` + `@anthropic-ai/sdk` (solo rama
+  de fallback API) + **`src/claudeCode.js`** (motor por defecto, `claude -p` headless).
   - Sirve `src/web/` y expone la API REST bajo `/api`.
   - **PDF final** (`POST /eventos/:id/pdf`): el cliente manda las páginas de la NDF rasterizadas
     (PNG dataURL, vía html2canvas) + el orden de los adjuntos; el server concatena con **pdf-lib**
@@ -105,9 +157,12 @@ La salida estructurada (`output_config.format` json_schema) sí funciona en Haik
     (se conservan los últimos `MAX_BACKUPS`).
 - **Arranque (Windows)**: `Start.bat` (sin terminal, delega en `src/Start.vbs`),
   `Diagnose.bat` (con ventana, para ver errores). `npm start` = `node src/server.js`.
-  - **Node.js es el único requisito externo.** Si falta, los lanzadores ofrecen instalarlo
-    automáticamente con `winget` (`OpenJS.NodeJS.LTS`; requiere internet + UAC, y relanzar una vez);
-    si no hay winget, abren nodejs.org. `Start.vbs` comprueba `where node` antes de arrancar.
+  - **Node.js** es el requisito base. Si falta, los lanzadores ofrecen instalarlo automáticamente con
+    `winget` (`OpenJS.NodeJS.LTS`; requiere internet + UAC, y relanzar una vez); si no hay winget,
+    abren nodejs.org. `Start.vbs` comprueba `where node` antes de arrancar.
+  - **Claude Code** es el requisito del motor de IA por defecto (instalado + `claude login`). Sin él,
+    el análisis solo funciona con el respaldo a la API activado en Réglages. (Los lanzadores no lo
+    instalan automáticamente; la app lo autodetecta en el PATH.)
 - **Frontend** `src/web/` (vanilla JS): `index.html`, `styles.css`, `app.js`, `i18n.js`, `logo-bdi.png`.
   - Vendor local (`src/web/vendor/`): `pdf.js`/`pdf.worker` (miniaturas y preview de la pestaña
     Signée) y `html2canvas` (rasterizar la NDF para el PDF final).
@@ -129,11 +184,15 @@ La salida estructurada (`output_config.format` json_schema) sí funciona en Haik
     documentos** (`#crear-dropzone`, `crearDocs[]`): al crear se suben y se lanza el análisis.
   - **Análisis automático**: al subir/borrar docs se llama solo a `/analizar` (`lanzarAnalisis()`,
     cancelable por `estado.analisisToken`: resultado obsoleto se descarta; borrar un doc corta y relanza).
-  - **Journal d'analyse (logs en direct)**: el servidor emite logs por paso (`emitLog`) y los expone
-    por **SSE** (`GET /api/eventos/:id/logs`); el cliente (`abrirLogStream`/`renderLogs`) los muestra en
-    un panel consola (`#analyse-logs-panel`) de la pestaña Analyse durante el análisis y la relectura
-    (`reextraer`). El buffer por evento se reinicia (`resetLog`) al iniciar cada análisis; los mismos
-    mensajes salen por `console.log` del servidor. Los mensajes del log van en francés (no se traducen).
+  - **Journal d'analyse + resultados en directo (SSE)**: el mismo stream `GET /api/eventos/:id/logs`
+    transporta (a) líneas de log por paso (`emitLog`, buffer por evento, reiniciado con `resetLog`) y
+    (b) eventos ESTRUCTURADOS (`emitEvento`, no bufferizados salvo la última instantánea de datos):
+    `datos` (esqueleto de la NDF al iniciar, o snapshot al reconectar a mitad de análisis vía
+    `estructBuffer`), `doc` (un documento terminó: su transcripción **y** sus líneas) y `fin`. El
+    cliente (`abrirLogStream`): `datos` → adopta `estado.activo.datos`; `doc` → `aplicarDocEnVivo`
+    (pinta la transcripción en Analyse + **añade sus líneas a la NDF** y re-renderiza); `fin` →
+    `finalizarAnalisisEnVivo` (recarga datos definitivos). `lanzarAnalisis` vacía las líneas locales al
+    empezar para que se reconstruyan documento a documento. Los mensajes de log van en francés.
   - **Duplicados**: al subir, el server calcula sha256 y rechaza (409) si ya existe un documento idéntico.
   - **Huérfanos**: documentos subidos que no aparecen en ninguna `ligne.fichiers_source` → aviso en la NDF
     (`#aviso-orphelins`) y badge rojo en la tarjeta (`documentosHuerfanos()`).
@@ -180,10 +239,13 @@ La salida estructurada (`output_config.format` json_schema) sí funciona en Haik
   - **Orden de adjuntos**: cards reordenables (drag&drop) en `#ordre-cards` → `datos.ordre_pieces`.
   - **Ayuda única**: un solo botón `#btn-howto-global` (header) → `abrirAyudaGlobal()` concatena todas
     las secciones de `AYUDA` (incl. `signee`) en `#modal-howto` (`.modal-howto-grande`).
-  - **Réglages** (`#btn-ajustes` junto a Thème → `#modal-ajustes`): cambia la **clave API** (campo
-    password con ojo; placeholder = clave enmascarada, vacío = conservar) y el **modelo** (desplegable
-    poblado desde `GET /api/settings`). **Tester la connexion** (`POST /api/settings/test`) prueba sin
-    guardar; **Enregistrer** hace `PUT /api/settings`. Sin estado de evento; i18n bajo `settings.*`.
+  - **Réglages** (`#btn-ajustes` junto a Thème → `#modal-ajustes`): muestra el **estado del motor
+    Claude Code** (`#set-cc-estado`: detectado + versión / no encontrado), un **toggle de respaldo a la
+    API** (`#set-api-fallback`), la **clave API** (campo password con ojo; solo se usa con el respaldo
+    activo; placeholder = clave enmascarada, vacío = conservar) y el **modelo** (desplegable poblado
+    desde `GET /api/settings`). **Tester la connexion** (`POST /api/settings/test`) prueba el motor
+    **activo** (lanza un `claude -p` mínimo, o un ping de la API) sin guardar; **Enregistrer** hace
+    `PUT /api/settings` (incluye `apiFallback`). Sin estado de evento; i18n bajo `settings.*`.
   - **Modales**: crear evento, visor doc (`#modal-doc`), firma (`#modal-firma`), ayuda (`#modal-howto`),
     réglages (`#modal-ajustes`).
 - **Datos** `data/Cases/<id>/`: `event.json` (todo), `Documents/` (ficheros), `_backups/` (copias).
@@ -239,7 +301,7 @@ Reglas de negocio (no romper):
 | POST/DELETE/GET | `/api/eventos/:id/archivos[/:n]` | subir / borrar / servir fichero |
 | POST | `/api/eventos/:id/archivos/:n/renombrar` | renombrar |
 | POST | `/api/eventos/:id/analizar` | Claude lee documentos → ocr + datos |
-| GET | `/api/eventos/:id/logs` | **SSE**: journal d'analyse en directo (logs por paso) |
+| GET | `/api/eventos/:id/logs` | **SSE**: journal d'analyse + resultados en directo (logs + eventos `datos`/`doc`/`fin`) |
 | PUT | `/api/eventos/:id/ocr` | guardar transcripciones |
 | POST | `/api/eventos/:id/regenerar` | re-extraer desde transcripciones |
 | PUT | `/api/eventos/:id/datos` | guardar la NDF (autoguardado) |
@@ -249,8 +311,8 @@ Reglas de negocio (no romper):
 | GET/POST/PUT/DELETE | `/api/personnes[/:pid]` | CRUD de personas (base de RIB) |
 | POST | `/api/personnes/extraire` | extraer datos bancarios de un RIB (Claude) |
 | GET/POST/DELETE | `/api/firmas[/:n]` | listar / subir / servir / borrar firmas |
-| GET/PUT | `/api/settings` | leer (clave enmascarada + modelo) / cambiar clave-modelo en caliente |
-| POST | `/api/settings/test` | probar una clave/modelo (sin persistir) con un mensaje mínimo |
+| GET/PUT | `/api/settings` | leer (motor + estado Claude Code + apiFallback + clave enmascarada + modelo) / cambiar en caliente |
+| POST | `/api/settings/test` | probar el motor activo (Claude Code `claude -p` mínimo o ping de la API), sin persistir |
 | POST | `/api/ping` · `/api/cerrar` | latido / cierre por ventana |
 
 ## La hoja NDF (réplica del modelo oficial)

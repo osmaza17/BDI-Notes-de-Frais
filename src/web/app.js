@@ -55,7 +55,7 @@ async function api(ruta, opciones = {}) {
 const TIPOS_ERROR_IA = new Set(['clave_falta', 'clave_invalida', 'sin_creditos', 'sin_permiso', 'limite', 'sobrecarga', 'servidor', 'red', 'desconocido']);
 const ERROR_IA_ICONO = { clave_falta: '🔑', clave_invalida: '🔑', sin_creditos: '💳', sin_permiso: '🚫', limite: '⏳', sobrecarga: '🛠', servidor: '🛠', red: '📡', desconocido: '⚠' };
 // Acción del botón principal según el tipo; el resto ofrece « Réessayer » si hay retry.
-const ERROR_IA_ACCION = { clave_falta: 'settings', clave_invalida: 'settings', sin_permiso: 'settings', sin_creditos: 'console' };
+const ERROR_IA_ACCION = { clave_falta: 'settings', clave_invalida: 'settings', sin_permiso: 'settings', sin_creditos: 'console', claude_code_falta: 'settings', claude_code_auth: 'settings' };
 let _errorIaRetry = null;
 
 function mostrarErrorIA(e, onRetry) {
@@ -218,6 +218,9 @@ function mostrarVista(nombre) {
   if (nombre === 'signee') renderSignee();
 }
 function volverAEventos() {
+  // El análisis sigue en el servidor aunque salgamos; solo cerramos el stream local
+  // (al volver al evento se reengancha). NO se cancela nada en el servidor.
+  cerrarLogStream();
   estado.activo = null;
   $('#tabs').style.display = 'none';
   marcarHome('eventos');
@@ -250,6 +253,14 @@ async function abrirAjustes() {
     const sel = $('#set-model');
     sel.innerHTML = s.models.map((m) => `<option value="${escapar(m.id)}">${escapar(m.label)}</option>`).join('');
     sel.value = s.model;
+    // Estado del motor Claude Code (detectado en este ordenador) + toggle de respaldo API.
+    const cc = s.claudeCode || {};
+    const ccTxt = cc.disponible
+      ? t('settings.engineClaudeCode') + (cc.version ? ` (v${cc.version})` : '')
+      : t('settings.engineClaudeCodeOff');
+    $('#set-cc-estado').textContent = ccTxt;
+    $('#set-cc-estado').className = 'muted' + (cc.disponible ? ' set-ok' : ' set-key-missing');
+    $('#set-api-fallback').checked = !!s.apiFallback;
     $('#set-apikey').placeholder = s.apiKeySet ? s.apiKeyMask : 'sk-ant-…';
     $('#set-apikey-estado').textContent = s.apiKeySet ? t('settings.keySet') : t('settings.keyMissing');
     $('#set-apikey-estado').className = 'muted' + (s.apiKeySet ? '' : ' set-key-missing');
@@ -258,7 +269,7 @@ async function abrirAjustes() {
 }
 function cerrarAjustes() { $('#modal-ajustes').classList.remove('show'); }
 function cuerpoAjustes() {
-  const body = { model: $('#set-model').value };
+  const body = { model: $('#set-model').value, apiFallback: $('#set-api-fallback').checked };
   const key = $('#set-apikey').value.trim();
   if (key) body.apiKey = key;
   return body;
@@ -581,7 +592,17 @@ $('#btn-save-personne').addEventListener('click', async () => {
 async function abrirEvento(id) {
   estado.activo = await api('/eventos/' + id);
   estado.activo.ocr = estado.activo.ocr || {};
-  estado.analizando = false; estado.analisisToken++;
+  estado.analisisToken++;
+  // Si el servidor sigue analizando ESTE evento (p. ej. saliste y volviste), reengancha el
+  // stream en directo en vez de perder el progreso; ya se ven las transcripciones hechas.
+  if (estado.activo.analizando) {
+    estado.analizando = true;
+    estado.analisisLogs = [];
+    abrirLogStream(id);
+  } else {
+    estado.analizando = false;
+    cerrarLogStream();
+  }
   $('#evento-activo').textContent = `${seccionDe(estado.activo)} — ${estado.activo.nom}`;
   // Pestañas jerárquicas: la fila Personnes/Événements sigue visible; aparece la subfila.
   marcarHome('eventos');
@@ -698,10 +719,17 @@ function tarjetaDoc(nom, conAcciones) {
       if (!confirm(t('docs.confirmDel', { x: nom }))) return;
       await api(`/eventos/${estado.activo.id}/archivos/${encodeURIComponent(nom)}`, { method: 'DELETE' });
       await recargarActivo();
-      renderDocumentos(); renderAnalyse(); renderNDF();
       toast(t('docs.deleted'));
-      estado.analisisToken++; estado.analizando = false;
-      if (estado.activo.archivos.length) lanzarAnalisis();
+      if (estado.activo.analizando) {
+        // El análisis sigue en el servidor (ignorará el documento borrado): reenganchar, sin relanzar.
+        estado.analizando = true;
+        if (!estado.logSource) abrirLogStream(estado.activo.id);
+        renderDocumentos(); renderAnalyse(); renderNDF();
+      } else {
+        estado.analisisToken++; estado.analizando = false;
+        renderDocumentos(); renderAnalyse(); renderNDF();
+        if (estado.activo.archivos.length) lanzarAnalisis();
+      }
     });
   }
   pintarMiniatura(card.querySelector('.thumb'), estado.activo.id, nom);
@@ -861,35 +889,94 @@ function abrirLogStream(id) {
   if (typeof EventSource === 'undefined') return;
   try {
     const es = new EventSource(`/api/eventos/${id}/logs`);
-    es.onmessage = (e) => { try { estado.analisisLogs.push(JSON.parse(e.data)); renderLogs(); } catch {} };
-    estado.logSource = es; // se reintenta solo; se cierra al terminar el análisis
+    es.onmessage = (e) => {
+      let data; try { data = JSON.parse(e.data); } catch { return; }
+      const esActivo = estado.activo && estado.activo.id === id;
+      if (data.tipo === 'datos') {                     // esqueleto de la NDF al iniciar (o snapshot al reconectar)
+        if (esActivo) { estado.activo.datos = data.datos; estado.activo.ocr = estado.activo.ocr || {}; renderNDF(); renderAnalyse(); }
+        return;
+      }
+      if (data.tipo === 'doc') {                       // un documento terminó: transcripción + sus líneas, en directo
+        if (esActivo) aplicarDocEnVivo(data.nombre, data.texto, data.lignes, data.observations);
+        return;
+      }
+      if (data.tipo === 'fin') {                       // el servidor terminó el análisis
+        if (esActivo) finalizarAnalisisEnVivo(id);
+        return;
+      }
+      estado.analisisLogs.push(data); renderLogs();    // línea de log normal (Journal d'analyse)
+    };
+    estado.logSource = es; // se reintenta solo
   } catch {}
+}
+// Pinta la transcripción de un documento en cuanto llega, sin re-render global (no pisa lo que
+// el usuario esté editando en otros documentos ni en este si tiene el foco).
+function aplicarTranscripcionEnVivo(nom, texto) {
+  const a = estado.activo;
+  if (!a) return;
+  a.ocr = a.ocr || {};
+  a.ocr[nom] = texto;
+  const item = [...document.querySelectorAll('#analyse-lista .analyse-item')].find((el) => el.dataset.nom === nom);
+  if (!item) return;                                   // pestaña aún no montada: se verá al renderizar
+  const cont = item.querySelector('.txt');
+  if (!cont) return;
+  const taActual = cont.querySelector('textarea');
+  if (taActual && document.activeElement === taActual) { a.ocr[nom] = taActual.value; return; } // editando: no pisar
+  cont.innerHTML = `<textarea placeholder="${t('analyse.placeholder')}">${escapar(texto)}</textarea>`;
+  cont.querySelector('textarea').addEventListener('input', (e) => { a.ocr[nom] = e.target.value; autoguardarOcr(); });
+}
+// Un documento terminó (SSE 'doc'): pinta su transcripción en Analyse Y añade sus líneas a la NDF,
+// que se re-renderiza en directo. Así los resultados aparecen documento a documento, no al final.
+function aplicarDocEnVivo(nom, texto, lignes, observations) {
+  const a = estado.activo; if (!a) return;
+  aplicarTranscripcionEnVivo(nom, texto);              // transcripción (respeta edición en curso)
+  if (!a.datos) return;                                // el esqueleto llega por 'datos'; si aún no, se verá al recargar
+  if (!Array.isArray(a.datos.lignes)) a.datos.lignes = [];
+  if (!Array.isArray(a.datos.observations)) a.datos.observations = [];
+  if (lignes && lignes.length) a.datos.lignes.push(...lignes);
+  if (observations && observations.length) a.datos.observations.push(...observations);
+  renderNDF();
+}
+// El servidor avisó (SSE 'fin') de que el análisis terminó: recarga los datos definitivos.
+async function finalizarAnalisisEnVivo(id) {
+  if (!estado.activo || estado.activo.id !== id) return;
+  try { await recargarActivo(); } catch {}
+  estado.analizando = false;
+  cerrarLogStream();
+  renderAnalyse(); renderNDF();
 }
 $('#btn-clear-logs').addEventListener('click', () => { estado.analisisLogs = []; renderLogs(); });
 
 // ---- Análisis automático (cancelable) ----
 async function lanzarAnalisis() {
   if (!estado.activo || !estado.activo.archivos.length) return;
+  const id = estado.activo.id;              // evento concreto: si el usuario se sale, el servidor sigue solo
   const token = ++estado.analisisToken;
   estado.analizando = true;
   estado.analisisLogs = [];                 // limpia el journal de la corrida anterior
-  abrirLogStream(estado.activo.id);         // escucha los logs del servidor en directo
+  // Vacía las líneas/remarques actuales para que se reconstruyan documento a documento (el
+  // esqueleto definitivo llega por SSE 'datos'); conserva el resto de datos hasta entonces.
+  if (estado.activo.datos) { estado.activo.datos.lignes = []; estado.activo.datos.observations = []; }
+  abrirLogStream(id);                        // logs + transcripciones + líneas en directo
   renderLogs();
   const est = $('#estado-analisis');
   if (est) est.textContent = t('analysing');
-  renderAnalyse();
+  renderAnalyse(); renderNDF();
+  // ¿Seguimos viendo el MISMO evento y esta corrida sigue siendo la vigente?
+  const vigente = () => estado.activo && estado.activo.id === id && token === estado.analisisToken;
+  let adjuntado = false;
   try {
-    const r = await api(`/eventos/${estado.activo.id}/analizar`, { method: 'POST' });
-    if (token !== estado.analisisToken) return;
+    const r = await api(`/eventos/${id}/analizar`, { method: 'POST' });
+    if (!vigente()) return;                   // el usuario se salió: el servidor ya guardó; nada que pintar
     estado.activo.datos = r.datos; estado.activo.ocr = r.ocr || {};
     if (est) est.textContent = t('analysed'); toast(t('analysed'));
   } catch (e) {
-    if (token !== estado.analisisToken) return;
+    if (!vigente()) return;                   // salió o error de corrida obsoleta: se ignora en silencio
+    if (e.tipo === 'analyse_en_cours') { adjuntado = true; return; }  // ya hay un análisis: el stream en vivo + 'fin' lo gestionan
     if (est) est.textContent = 'Erreur : ' + e.message;
     mostrarErrorIA(e, lanzarAnalisis);
   } finally {
-    cerrarLogStream();
-    if (token === estado.analisisToken) { estado.analizando = false; renderAnalyse(); renderNDF(); }
+    if (!adjuntado && vigente()) { cerrarLogStream(); estado.analizando = false; renderAnalyse(); renderNDF(); }
   }
 }
 

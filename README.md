@@ -7,8 +7,9 @@ few clicks: you drop the proofs of an event (invoices, receipts, *attestations s
 matches the BDI's official template**. The final deliverable is a **single PDF** that bundles the
 expense report together with every supporting document.
 
-Everything runs on your own machine. Invoices, signatures, bank details and your API key never leave
-the folder.
+Everything runs on your own machine. By default the AI work is done by **Claude Code installed on the
+computer** (your subscription — no API key needed); the Anthropic API is only an optional fallback.
+Invoices, signatures, bank details and any API key never leave the folder.
 
 > 🇫🇷 The app interface is available in **French, Spanish and English**. The generated expense report
 > itself stays in French, because it is the BDI's official document.
@@ -45,15 +46,15 @@ the folder.
 ## What it does
 
 ```
-Drop documents (PDF / JPG / PNG)  ─►  automatic AI analysis (SEQUENTIAL)
+Drop documents (PDF / JPG / PNG)  ─►  automatic AI analysis (INCREMENTAL, a few in parallel)
         │
         ▼
-One request per document: Claude reads it directly (vision / document input)
-   → transcribes that piece, line by line
+One request per document does it all: Claude reads it directly (Claude Code Read tool, or vision
+   via the API) → transcribes that piece line by line AND extracts its expense lines
         │
         ▼
-One final step: builds the expense lines from all the transcriptions
-   (text only, with a confidence level)
+As soon as a document is done it streams in live: its transcription + its lines are added to the
+   report immediately, without waiting for the rest (results appear document by document)
         │
         ▼
 Human review  (Analysis: fix the text · Expense report: fix the data — everything auto-saved)
@@ -62,24 +63,32 @@ Human review  (Analysis: fix the text · Expense report: fix the data — everyt
 Final PDF  =  the expense report  +  all the attachments, in the order you choose
 ```
 
-There is **no external OCR**: each document is sent straight to Claude, which both transcribes it and
-fills in the report. One API, one key. The analysis is **sequential** — each document is transcribed
-in its own request, then a single step structures the expense lines from all the transcriptions. This
-keeps every request small and reliable instead of sending every document (and the whole transcription)
-in one oversized call.
+There is **no external OCR**: Claude both transcribes each document and fills in the report. By default
+this runs through **headless Claude Code** (`claude -p`) using the subscription already logged in on the
+machine — **no API key required**. The Anthropic API is used only as an **optional fallback** you can
+enable in *Réglages* (see [Requirements](#requirements)). The analysis is **incremental**: each document
+is read, transcribed and turned into expense lines in a single request, and its results show up as soon
+as it finishes. A small number of documents are processed **in parallel** (3 by default, set
+`ANALISIS_CONCURRENCIA` in `.env`; use `1` for strictly sequential) — the bottleneck is API latency, so
+overlapping requests cuts the total time without changing the document-by-document display.
 
 ---
 
 ## Requirements
 
 - [Node.js](https://nodejs.org/) **20 or later**.
-- An **Anthropic API key** → https://console.anthropic.com/settings/keys
+- **Claude Code**, installed and logged in (run `claude login` once) → this is the default engine,
+  used through your subscription. The app auto-detects the `claude` binary on the PATH.
+- *(Optional)* An **Anthropic API key** → https://console.anthropic.com/settings/keys — only needed if
+  you enable the **API fallback** in *Réglages* (for machines without Claude Code).
 
 ## Setup
 
-1. Copy `.env.example` to `.env`.
-2. Paste your key: `ANTHROPIC_API_KEY=...your_key...`
-3. Save. (Optional: change `ANTHROPIC_MODEL`, default `claude-haiku-4-5`.)
+1. Install Claude Code and run `claude login` once (so the subscription is available on this machine).
+2. *(Optional)* Copy `.env.example` to `.env` if you want the API fallback or to pin a model. By default
+   **no `.env` is required**.
+3. The engine and the optional API fallback (plus model and key) are all configurable from the
+   **Réglages (⚙)** panel inside the app — it shows whether Claude Code is detected.
 
 ## Running the app
 
@@ -151,7 +160,8 @@ number, section/asso, date, member name & IBAN).
 
 Below it, drag-and-drop your invoices, receipts and attestations **onto the cards area** (or use
 **« + Add documents »**). **Analysis starts automatically** — Claude reads each document, transcribes
-it and fills the report. While it works you see a loading indicator.
+it and fills the report. Results appear **document by document** as each one finishes (a few run in
+parallel), with a live log and a loading indicator while it works.
 
 - Each card has a **thumbnail** (first page of PDFs, full image otherwise).
 - **« View »** opens it in an in-app popup viewer; **« Open »** opens it in a new browser tab; click
@@ -258,7 +268,8 @@ NotesDeFraisBDI/
 ├── .gitignore            ← excludes .env, data/Cases/, data/Signatures/, data/people.json
 ├── package.json · package-lock.json · node_modules/   ← must stay at the root (npm)
 ├── src/
-│   ├── server.js         ← backend (Express + Anthropic SDK + pdf-lib)
+│   ├── server.js         ← backend (Express + pdf-lib; routes AI to Claude Code or the API)
+│   ├── claudeCode.js     ← default engine: headless `claude -p` (invisible window, subscription)
 │   ├── Start.vbs         ← hidden launcher (the project root is its parent folder)
 │   └── web/              ← UI (vanilla JS, no framework)
 │       ├── index.html · styles.css · app.js
@@ -280,15 +291,23 @@ NotesDeFraisBDI/
 
 ## How it works (technical)
 
-- **Backend** `src/server.js`: Node + Express, no build step. Uses the official `@anthropic-ai/sdk` and
-  `pdf-lib`. Serves `src/web/` and exposes a REST API under `/api`. Paths are resolved relative to the
-  project root (`__dirname/..`) and `.env` is loaded from there explicitly, so the server works from
-  any working directory.
+- **Backend** `src/server.js`: Node + Express, no build step. Uses `pdf-lib`, the official
+  `@anthropic-ai/sdk` (API fallback only) and **`src/claudeCode.js`** (the default engine). Serves
+  `src/web/` and exposes a REST API under `/api`. Paths are resolved relative to the project root
+  (`__dirname/..`) and `.env` is loaded from there explicitly, so the server works from any directory.
+  - **AI engine (`src/claudeCode.js`)**: by default each AI call spawns a **headless Claude Code**
+    process (`claude -p --output-format json`, prompt over stdin) using your subscription. On Windows the
+    console window is kept **invisible** (`windowsHide: true`). The child's `ANTHROPIC_API_KEY` /
+    `ANTHROPIC_AUTH_TOKEN` are **stripped** so it uses the subscription, not the API. It runs in a throw-
+    away temp folder where the document to read is copied, and Claude reads it with its **Read** tool
+    (`--allowedTools Read`). `motorActivo()` picks the engine: Claude Code if the `claude` binary is on
+    the PATH, otherwise the API **only if the fallback is enabled** and a key is set, otherwise a clear
+    error. The CLI doesn't enforce a JSON schema, so the output is parsed leniently (`parsearJSONlax`).
   - **Final PDF**: the browser rasterises each A4 page of the report with **html2canvas** and POSTs the
     images + the chosen attachment order; the server concatenates everything with **pdf-lib** (report
     images become pages; attachment PDFs are copied page-by-page, images are embedded into A4 pages).
-  - **Structured output**: Claude is called with `output_config.format` (JSON schema). The `effort`
-    parameter is omitted automatically when the model is Haiku (which doesn't support it).
+  - **Structured output (API fallback)**: Claude is called with `output_config.format` (JSON schema),
+    `effort` omitted automatically for Haiku (which doesn't support it).
   - **Shutdown only on window close**: the browser sends `POST /api/cerrar` (a `pagehide` beacon); the
     server schedules shutdown in ~4 s, and a following `POST /api/ping` (after an F5) cancels it.
   - **Backups**: every save copies the previous `event.json` into `_backups/` (last *N* kept). Older
@@ -343,18 +362,21 @@ People live in a separate, git-ignored `data/people.json`:
 | GET/POST/PUT/DELETE | `/api/personnes[/:pid]` | people CRUD |
 | POST | `/api/personnes/extraire` | extract bank details from a RIB (AI) |
 | GET/POST/DELETE | `/api/firmas[/:n]` | list / upload / serve / delete signatures |
+| GET/PUT | `/api/settings` | read (engine + Claude Code status + apiFallback + masked key + model) / update hot |
+| POST | `/api/settings/test` | test the active engine (a minimal `claude -p`, or an API ping) without saving |
 | POST | `/api/ping` · `/api/cerrar` | heartbeat / close-on-window |
 
 ## Portability guarantee
 
 As long as the whole app lives in one folder with this structure, it works on **any computer with
 Node ≥ 20**: every path is relative, there are no native binaries and no build step, and all data and
-secrets live inside the folder. Just copy it and run `Start.bat` (or `npm install && npm start`). On
-a new machine you only need to recreate `.env` with your key (it is never copied with the repo).
+secrets live inside the folder. Just copy it and run `Start.bat` (or `npm install && npm start`).
 
-The **only external requirement is Node.js itself** (npm ships with it). If it's missing, `Start.bat`
-and `Diagnose.bat` offer to install it automatically via `winget`; otherwise they point you to
-nodejs.org.
+For the AI analysis the machine needs **Claude Code installed and logged in** (`claude login`) — the
+default engine, auto-detected on the PATH. If you move the folder to a computer without Claude Code,
+analysis still works **only** if you enable the **API fallback** in *Réglages* and provide a key in
+`.env` (never copied with the repo); otherwise the app shows a clear error. **Node.js** itself is the
+only requirement the launchers can install automatically (via `winget`); Claude Code is not auto-installed.
 
 ## Privacy & the public repo
 
@@ -366,9 +388,11 @@ anything sensitive.
 
 - **Portable, no build.** Node + Express and vanilla JS; only pure-JS dependencies (`pdf-lib` to merge
   PDFs). `npm install` and go — anyone can clone and run it.
-- **Local engine, not just HTML.** API keys can't sit in the browser (public repo + CORS), so a small
-  local server keeps them in `.env`.
-- **One provider (Claude).** The document goes straight to the model: fewer moving parts, one key.
+- **Local engine, not just HTML.** Credentials can't sit in the browser (public repo + CORS), so a small
+  local server runs the AI (Claude Code subscription by default; API key in `.env` only as fallback).
+- **Subscription first, API as fallback.** By default the AI runs through the machine's logged-in Claude
+  Code (no per-token API cost, no key to share); the API is an opt-in fallback. Each headless `claude -p`
+  call is invisible on Windows and forced onto the subscription (API env vars stripped).
 - **One JSON per event** + files in `Documents/` + copies in `_backups/`.
 - **The real deliverable** is the concatenated PDF (report + proofs), in the treasurer's chosen order.
 - **Human review always.** It's money: the AI proposes, the treasurer verifies and corrects (text in
@@ -379,7 +403,9 @@ anything sensitive.
 
 - **"Server stopped" banner / connection refused** → the server isn't running. Reopen `Start.bat`,
   then click *Retry* or reload.
-- **AI analysis does nothing / errors** → check `ANTHROPIC_API_KEY` in `.env`, then restart.
+- **AI analysis does nothing / errors** → open **Réglages (⚙)**: it shows whether **Claude Code** is
+  detected. If not, run `claude login` in a terminal (and make sure `claude` is on the PATH), or enable
+  the **API fallback** and set a key. If you just installed Claude Code, restart the app.
 - **PDF colours/logo missing when printing the in-app preview** → in the browser print dialog enable
   *Background graphics*. (The final PDF from « Generate PDF » already includes them.)
 - **Changes don't show up** → hard-reload with **Ctrl+F5**.

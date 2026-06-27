@@ -383,12 +383,23 @@
       <p class="muted" data-i18n="settings.sub">La clé API et le modèle ne quittent jamais ton ordinateur (enregistrés dans .env).</p>
 
       <div class="campo" style="margin-top:14px">
+        <label data-i18n="settings.engine">Moteur d'analyse</label>
+        <div id="set-cc-estado" class="muted" style="margin-top:4px"></div>
+        <div class="muted" style="margin-top:4px" data-i18n="settings.engineHint">Par défaut, l'analyse utilise Claude Code installé ici (ton abonnement, sans clé API). L'API n'est utilisée qu'en repli si tu l'actives ci-dessous.</div>
+        <label class="fila-inline" style="margin-top:8px; gap:8px; cursor:pointer">
+          <input id="set-api-fallback" type="checkbox" style="width:auto" />
+          <span data-i18n="settings.apiFallback">Utiliser l'API Anthropic en repli (si Claude Code est absent)</span>
+        </label>
+      </div>
+
+      <div class="campo" style="margin-top:14px">
         <label data-i18n="settings.apiKey">Clé API Anthropic</label>
         <div class="fila-inline">
           <input id="set-apikey" type="password" autocomplete="off" spellcheck="false" data-i18n-ph="settings.apiKeyPh" placeholder="sk-ant-…" />
           <button class="sec" id="set-apikey-toggle" type="button" title="Afficher / masquer">👁</button>
         </div>
         <div id="set-apikey-estado" class="muted" style="margin-top:4px"></div>
+        <div class="muted" style="margin-top:4px" data-i18n="settings.apiKeyOnlyFallback">La clé API ne sert qu'en repli, si l'option ci-dessus est activée.</div>
       </div>
 
       <div class="campo" style="margin-top:14px">
