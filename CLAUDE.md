@@ -97,19 +97,23 @@ el CLI (réplica del patrón de los proyectos `youtube-summarizer`/`linkedin-sum
 Las funciones de IA (`analizarDocumento`, `transcribirDocumento`, `estructurarDesdeTextos`,
 `extraerRIB`) tienen **rama CLI** (por defecto) y **rama API** (fallback) según `motorActivo()`.
 
-**Análisis INCREMENTAL + paralelo acotado (importante):** `analizarConClaude` procesa los documentos
-con un **pool de `CONCURRENCIA_ANALISIS` workers** (por defecto **3**, `ANALISIS_CONCURRENCIA` en
-`.env`; pon **1** para estrictamente secuencial). Para cada documento, **UNA sola petición**
-(`analizarDocumento`) lo lee, lo transcribe Y extrae **sus** líneas de la NDF en una pasada; en cuanto
-ese documento termina se empuja en directo (`onDoc` → SSE `doc`) y sus líneas se añaden a la NDF **sin
-esperar al resto**. Así los resultados aparecen documento a documento. Motivo del cambio: el cuello de
-botella es la **latencia de la API** (un `claude -p` vacío tarda ~2 s, pero leer+procesar un documento
-20-160 s), no la CPU local → varios en paralelo **solapan** esas esperas y dividen el tiempo total. El
-resultado FINAL que se persiste va **reordenado** por orden de documento (los workers acaban en
-desorden) y se reemite por SSE (`datos`) + va en la respuesta HTTP. Cada `analizarDocumento` fuerza
-`fichiers_source = [nombre]` (el modelo solo ve un `document.ext`) y normaliza IVA/importe
-(`normalizarLigne`: `taux_tva=0`, `montant_ttc=prix_ht`). Regla en el prompt: **un ticket/factura = una
-sola línea con el total** (no itemizar artículos). `max_tokens: 16000` solo en la rama API.
+**Análisis INCREMENTAL + paralelo acotado + EMISIÓN EN ORDEN (importante):** `analizarConClaude`
+procesa los documentos con un **pool de `CONCURRENCIA_ANALISIS` workers** (por defecto **3**,
+`ANALISIS_CONCURRENCIA` en `.env`; pon **1** para estrictamente secuencial). Para cada documento,
+**UNA sola petición** (`analizarDocumento`) lo lee, lo transcribe Y extrae **sus** líneas de la NDF en
+una pasada. Los workers **calculan en paralelo** (acaban en desorden), pero los resultados se **emiten
+(`onDoc` → SSE `doc`) en el ORDEN de la lista** mediante un **buffer de reordenación**: el documento i
+solo se muestra cuando ya se mostraron todos los anteriores (`proximo`/`listo[]`/`resultados[]`, vaciado
+serializado con una cadena de promesas). Así la transcripción del 1º aparece primero, luego la del 2º,
+etc., aunque uno posterior haya terminado antes (se retiene hasta que le toca). Motivo del paralelismo:
+el cuello de botella es la **latencia de la API** (un `claude -p` vacío tarda ~2 s, pero leer+procesar un
+documento 20-160 s), no la CPU local → varios a la vez **solapan** esas esperas y dividen el tiempo total
+(medido: ~166 s / 6 docs en paralelo-3 vs ~600 s+ en secuencial). El resultado FINAL que se persiste va
+también **ordenado** por documento y se reemite por SSE (`datos`) + va en la respuesta HTTP. Cada
+`analizarDocumento` fuerza `fichiers_source = [nombre]` (el modelo solo ve un `document.ext`) y normaliza
+IVA/importe (`normalizarLigne`: `taux_tva=0`, `montant_ttc=prix_ht`). Regla en el prompt: **un
+ticket/factura = una sola línea con el total** (no itemizar artículos). `max_tokens: 16000` solo en la
+rama API.
 
 **Por qué una sola llamada por documento:** enviar TODOS los documentos en una petición hinchaba
 entrada (N base64) y salida (todo el texto junto) → JSON truncado / cortes. Una llamada pequeña por

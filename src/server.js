@@ -449,33 +449,56 @@ async function analizarDocumentoConReintento(ev, id, nombre, onLog) {
   throw new Error(`Le document « ${nombre} » n'a pas pu être analysé après 2 tentatives. ${ultimoError?.message || ''}`.trim());
 }
 
-// Análisis INCREMENTAL con PARALELISMO acotado (pool de CONCURRENCIA_ANALISIS workers). Para cada
-// documento, una sola instancia `claude -p` lo lee, lo transcribe Y extrae sus líneas de la NDF; el
-// resultado (transcripción + líneas) se empuja en directo (`onDoc`) EN CUANTO ese documento termina,
-// sin esperar al resto → el tesorero ve aparecer los resultados documento a documento. Varios a la
-// vez solapan la latencia de la API y dividen el tiempo total. El RESULTADO FINAL que se devuelve va
-// REORDENADO según el orden original de los documentos (los workers terminan en desorden).
+// Análisis INCREMENTAL con PARALELISMO acotado (pool de CONCURRENCIA_ANALISIS workers) y EMISIÓN EN
+// ORDEN. Para cada documento, una sola instancia `claude -p` lo lee, lo transcribe Y extrae sus líneas
+// de la NDF. Se procesan VARIOS a la vez (solapan la latencia de la API → dividen el tiempo total),
+// PERO los resultados se EMITEN (`onDoc`) en el ORDEN de la lista: el documento i solo se muestra
+// cuando ya se mostraron todos los anteriores (buffer de reordenación). Así la transcripción del 1º
+// aparece primero, luego la del 2º, etc., aunque por velocidad se hayan calculado en desorden.
 async function analizarConClaude(ev, id, archivos, onLog, onDoc) {
-  const concur = Math.min(CONCURRENCIA_ANALISIS, archivos.length);
-  onLog?.(`🔎 Analyse de ${archivos.length} document(s)${concur > 1 ? ` · ${concur} en parallèle` : ''}…`);
-  const porDoc = new Map();   // nombre -> { transcription, lignes, observations }
-  const cola = [...archivos];
+  const total = archivos.length;
+  const concur = Math.min(CONCURRENCIA_ANALISIS, total);
+  onLog?.(`🔎 Analyse de ${total} document(s)${concur > 1 ? ` · ${concur} en parallèle, résultats dans l'ordre` : ''}…`);
+  const porDoc = new Map();             // nombre -> { transcription, lignes, observations }
+  const resultados = new Array(total);  // índice -> { nombre, res } | { skip: true }
+  const listo = new Array(total).fill(false);
+  let proximo = 0;                      // próximo índice a EMITIR (en orden)
   let hechos = 0;
+
+  // Emite por `onDoc`, en orden, todos los documentos consecutivos ya listos desde `proximo`.
+  // Se SERIALIZA con una cadena de promesas para que dos workers no emitan a la vez (sin carreras).
+  let cadenaEmision = Promise.resolve();
+  async function vaciar() {
+    while (proximo < total && listo[proximo]) {
+      const r = resultados[proximo];
+      proximo++;
+      if (r && !r.skip) await onDoc?.(r.nombre, r.res.transcription, r.res.lignes, r.res.observations);
+    }
+  }
+  const programarVaciado = () => (cadenaEmision = cadenaEmision.then(vaciar));
+
+  let cursor = 0;   // siguiente índice a tomar por un worker
   async function worker() {
     for (;;) {
-      const nombre = cola.shift();
-      if (nombre === undefined) return;
+      const i = cursor++;
+      if (i >= total) return;
+      const nombre = archivos[i];
       // El documento pudo borrarse a mitad del análisis (el usuario lo quitó): se ignora.
       const existe = await fs.access(path.join(rutaDocs(id), nombre)).then(() => true, () => false);
-      if (!existe) { onLog?.(`⏭ ${nombre} · supprimé en cours d'analyse, ignoré`); continue; }
+      if (!existe) {
+        onLog?.(`⏭ ${nombre} · supprimé en cours d'analyse, ignoré`);
+        resultados[i] = { skip: true }; listo[i] = true; programarVaciado(); continue;
+      }
       onLog?.(`📝 Analyse · ${nombre}`);
       const res = await analizarDocumentoConReintento(ev, id, nombre, onLog);
       porDoc.set(nombre, res);
-      onLog?.(`✓ ${nombre} · ${res.transcription.length} car. · ${res.lignes.length} ligne(s) (${++hechos}/${archivos.length})`);
-      await onDoc?.(nombre, res.transcription, res.lignes, res.observations);   // en directo, sin esperar al resto
+      onLog?.(`✓ ${nombre} · ${res.transcription.length} car. · ${res.lignes.length} ligne(s) (${++hechos}/${total})`);
+      resultados[i] = { nombre, res }; listo[i] = true; programarVaciado();
     }
   }
   await Promise.all(Array.from({ length: concur }, worker));
+  await cadenaEmision;   // asegura que se ha emitido todo lo pendiente, en orden
+
   // Resultado final ORDENADO por el orden original de los documentos.
   const ocr = {}, lignes = [], observations = [];
   for (const nombre of archivos) {

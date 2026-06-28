@@ -53,8 +53,9 @@ One request per document does it all: Claude reads it directly (Claude Code Read
    via the API) → transcribes that piece line by line AND extracts its expense lines
         │
         ▼
-As soon as a document is done it streams in live: its transcription + its lines are added to the
-   report immediately, without waiting for the rest (results appear document by document)
+Results stream in live, in the SAME ORDER the documents are listed: the first document's
+   transcription + lines appear first, then the second, and so on (a few run in parallel for speed,
+   but each is held back until its turn so the display stays in order)
         │
         ▼
 Human review  (Analysis: fix the text · Expense report: fix the data — everything auto-saved)
@@ -67,10 +68,11 @@ There is **no external OCR**: Claude both transcribes each document and fills in
 this runs through **headless Claude Code** (`claude -p`) using the subscription already logged in on the
 machine — **no API key required**. The Anthropic API is used only as an **optional fallback** you can
 enable in *Réglages* (see [Requirements](#requirements)). The analysis is **incremental**: each document
-is read, transcribed and turned into expense lines in a single request, and its results show up as soon
-as it finishes. A small number of documents are processed **in parallel** (3 by default, set
-`ANALISIS_CONCURRENCIA` in `.env`; use `1` for strictly sequential) — the bottleneck is API latency, so
-overlapping requests cuts the total time without changing the document-by-document display.
+is read, transcribed and turned into expense lines in a single request, and results appear **in the
+order the documents are listed** (first document first, then the second, …). A small number of documents
+are processed **in parallel** (3 by default, set `ANALISIS_CONCURRENCIA` in `.env`; use `1` for strictly
+sequential) — the bottleneck is API latency, so overlapping requests cuts the total time; a reordering
+buffer keeps the on-screen results in list order even though they finish out of order.
 
 ---
 
