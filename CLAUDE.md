@@ -13,6 +13,12 @@ un **único PDF** = la NDF + todas las pruebas adjuntas, listo para enviar.
 Todo corre en la máquina del usuario. Las facturas, las firmas y la clave de API nunca salen de la
 carpeta. El repositorio es **público**, así que nada sensible debe subirse (ver `.gitignore`).
 
+> ⚠️ **Requisitos para que la app funcione en un ordenador** (los dos hay que instalarlos):
+> 1. **Node.js 20 o superior** — sin él la app no arranca (los lanzadores de Windows ofrecen
+>    instalarlo automáticamente con `winget`).
+> 2. **Claude Code instalado y logueado** (`claude login`) — sin él no hay análisis de IA
+>    (salvo que se active el respaldo a la API con clave en `.env`).
+
 ## Portabilidad (requisito)
 
 La app debe seguir funcionando **copiando la carpeta a cualquier ordenador** con Node ≥ 20. Por eso:

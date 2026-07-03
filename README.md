@@ -11,6 +11,14 @@ Everything runs on your own machine. By default the AI work is done by **Claude 
 computer** (your subscription — no API key needed); the Anthropic API is only an optional fallback.
 Invoices, signatures, bank details and any API key never leave the folder.
 
+> ⚠️ **To run the app you need two things installed on the machine:**
+> 1. **[Node.js](https://nodejs.org/) 20 or later** — without it the app does not start
+>    (the Windows launchers offer to install it automatically via `winget`).
+> 2. **Claude Code**, installed and logged in (`claude login`) — without it there is no AI analysis
+>    (unless you enable the optional API fallback with a key in `.env`).
+>
+> Details in [Requirements](#requirements) and [Setup](#setup).
+
 > 🇫🇷 The app interface is available in **French, Spanish and English**. The generated expense report
 > itself stays in French, because it is the BDI's official document.
 
